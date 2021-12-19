@@ -1,0 +1,2961 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="CMS">
+
+<!--SELECT-->
+<!--CMS 일일판매액-->
+<select id="HAX.CMS.SELECT.001">
+	SELECT
+		SUM(TOTAL_AMOUNT) AS TOTAL_AMOUNT
+	FROM
+		TB_ORDER
+	WHERE
+		ORDER_STATUS = ''
+		AND USE_YN = TRUE
+</select>
+<!--CMS 유저 리워드-->
+<select id="HAX.CMS.SELECT.002">
+	SELECT
+		C.NAME,
+		C.TOTAL_AMOUNT
+	FROM
+		(
+			SELECT
+				A.NAME,
+				SUM(B.REWARD_POINT) AS TOTAL_AMOUNT
+			FROM
+				TB_MEMBER A
+				INNER JOIN TB_RESERVE B
+				ON A.MEMBER_PK = B.MEMBER_PK
+			WHERE
+				A.USE_YN = TRUE
+				AND B.REWARD_GUBUN = P
+				) AS C
+	ORDER BY
+		C.SUM
+	paginate
+		5
+</select>
+<!--유저 목록 조회-->
+<select id="HAX.CMS.SELECT.003">
+	SELECT
+		A.MEMBER_PK,
+		A.NAME,
+		A.SPECIAL_CODE,
+		A.PHONE,
+		A.EMAIL,
+		A.APPROVAL,
+		A.USE_YN,
+		A.REG_DT,
+		A.AGENT_CODE,
+		A.GRADE_CODE AS GRADE_NAME,
+		COALESCE(B.TOTAL_AMOUNT,0) AS TOTAL_AMOUNT,
+		COALESCE(B.TOTAL_REWARD,0) AS TOTAL_REWARD,
+		COALESCE(B.REMAIN_REWARD,0) AS REMAIN_REWARD,
+		C.CODE AS GRADE_CODE,
+		C.RATE,
+		COUNT(1) OVER() AS TOTAL
+	FROM
+		TB_MEMBER A
+		LEFT OUTER JOIN(
+			SELECT
+				*
+			FROM
+				FN_MEMBER_ORDERS(0,#{term_start},#{term_end})
+				) B
+		ON A.MEMBER_PK = B.MEMBER_PK
+		LEFT OUTER JOIN TB_GRADE C
+		ON A.GRADE_CODE = C.CODE
+	WHERE 1 = 1
+		AND A.MEMBER_TYPE = 'Normal'
+		<if test="search_word != null">
+		AND A.NAME like #{search_word}
+		</if>
+		<if test="special_code != null">
+        AND A.AGENT_CODE = #{special_code}
+		</if>
+		<choose>
+			<when test="is_approval == 'false' or is_approval == false">
+            AND a.approval = FALSE
+            </when>
+		    <when test="is_approval == 'true' or is_approval == true">
+            AND a.approval = TRUE
+            </when>
+		</choose>
+	ORDER BY
+		<choose>
+            <when test="sort_item == 'uname' and sort_type == 'DESC'">
+            A.NAME DESC
+            </when>
+			<when test="sort_item == 'uname' and sort_type == 'ASC'">
+            A.NAME ASC
+            </when>
+			<when test="sort_item == 'order' and sort_type == 'DESC'">
+            COALESCE(B.TOTAL_AMOUNT,0) DESC
+            </when>
+			<when test="sort_item == 'order' and sort_type == 'ASC'">
+            COALESCE(B.TOTAL_AMOUNT,0) ASC
+            </when>
+			<when test="sort_item == 'reward' and sort_type == 'DESC'">
+            COALESCE(B.TOTAL_REWARD,0) DESC
+            </when>
+			<when test="sort_item == 'reward' and sort_type == 'ASC'">
+            COALESCE(B.TOTAL_REWARD,0) ASC
+            </when>
+			<otherwise>
+			<if test="sort_type == 'DESC'">
+			A.REG_DT DESC
+			</if>
+			<if test="sort_type == 'ASC'">
+			A.REG_DT ASC
+			</if>
+			</otherwise>
+		</choose>
+	OFFSET
+		${page}
+	<if test="is_excel == 'false' or is_excel == false">
+	LIMIT
+		${paginate}
+	</if>
+</select>
+<!--유저 상세정보-->
+<select id="HAX.CMS.SELECT.004">
+	SELECT
+		A.MEMBER_PK,
+		A.USER_ID,
+		A.NAME,
+		A.SPECIAL_CODE,
+		A.APPROVAL_DT,
+		A.PHONE,
+		A.EMAIL,
+		A.MEMBER_TYPE,
+		A.IMG_URL,
+		A.REG_DT,
+		A.USE_YN,
+		A.IS_PUSH,
+		A.GRADE_START,
+		A.GRADE_END,
+		B.NAME AS GRADE_NAME,
+		B.CODE AS GRADE_CODE,
+		B.RATE,
+		B.DELIVERY,
+		B.FREE_AMOUNT,
+		C.COMPANY_TYPE,
+		C.COMPANY_CLASS,
+		C.COMPANY_ADDRESS,
+		C.COMPANY_CEO,
+		C.BUSINESS_CODE,
+		D.SPECIAL_CODE AS SALESMAN_CODE,
+		D.USER_ID AS SALESMAN_ID,
+		D.NAME AS SALESMAN_NAME,
+		D.APPROVAL AS SALESMAN_APPROVAL,
+		D.PHONE AS SALESMAN_PHONE,
+		D.EMAIL AS SALESMAN_EMAIL,
+		D.IS_RETIRED,
+		COALESCE(E.REMAIN_REWARD,0) AS REMAIN_REWARD
+	FROM
+		TB_MEMBER A
+		INNER JOIN TB_GRADE B
+		ON A.GRADE_CODE = B.CODE
+		INNER JOIN TB_COMPANY C
+		ON A.MEMBER_PK = C.MEMBER_PK
+		LEFT OUTER JOIN TB_MEMBER D
+		ON A.AGENT_CODE = D.SPECIAL_CODE
+		LEFT OUTER JOIN (
+			SELECT
+				MEMBER_PK, REMAIN_REWARD
+			FROM
+				FN_MEMBER_ORDERS(#{member_pk},0,0)
+		) AS E
+		ON A.MEMBER_PK = E.MEMBER_PK
+	WHERE
+		A.MEMBER_PK = #{member_pk}
+</select>
+<!--유저 리워드 히스토리-->
+<select id="HAX.CMS.SELECT.005">
+	SELECT
+		A.MEMBER_PK,
+		A.NAME,
+		C.*,
+		B.CONTENT,
+		B.REWARD_RATE,
+		COUNT(1) OVER() AS TOTAL
+	FROM
+		TB_MEMBER A
+		INNER JOIN TB_RESERVE B
+		ON A.MEMBER_PK = B.MEMBER_PK 
+		INNER JOIN TB_POINTLOG C
+		ON B.RESERVE_PK = C.RESERVE_PK
+	WHERE 
+		B.MEMBER_PK = #{member_pk}
+	ORDER BY
+		C.REG_DT DESC
+	OFFSET
+		${page}
+	LIMIT
+		${paginate}
+</select>
+<!--카테고리 브랜드 목록 조회-->
+<select id="HAX.CMS.SELECT.006">
+	SELECT
+		A.CATEGORY_PK,
+		A.CATEGORY_NAME,
+		A.CATEGORY_LOGO,
+		A.CATEGORY_TYPE,
+		A.CATEGORY_SEQ,
+		A.USE_YN AS CATEGORY_YN,
+		COALESCE(D.COUNT,0) AS PRODUCT_COUNT
+	FROM
+		TB_CATEGORY A
+		LEFT OUTER JOIN (
+			SELECT
+				B.CATEGORY_PK,COUNT(1)
+			FROM
+				TB_CATEGORY B
+				INNER JOIN TB_PRODUCT C
+				ON B.CATEGORY_PK = C.CATEGORY_PK
+			WHERE
+				B.CATEGORY_TYPE = 'B'
+				<if test="is_use != null">
+				AND C.USE_YN = TRUE
+				</if>
+				<if test="is_cms == false">
+				AND B.USE_YN = TRUE
+				</if>
+			GROUP BY
+				B.CATEGORY_PK
+				) AS D
+		ON A.CATEGORY_PK = D.CATEGORY_PK
+	WHERE
+		A.CATEGORY_TYPE = 'B'
+		<if test="search_word != null">
+		AND A.CATEGORY_NAME like #{search_word}
+		</if>
+		<if test="is_cms == false">
+		AND A.USE_YN = TRUE
+		</if>
+	ORDER BY
+		A.CATEGORY_SEQ ASC,A.REG_DT DESC
+	<!-- OFFSET
+		${page}
+	LIMIT
+		${paginate} -->
+</select>
+<!--카테고리 상세정보-->
+<select id="HAX.CMS.SELECT.007">
+	SELECT
+		CATEGORY_PK,
+		CATEGORY_NAME,
+		CATEGORY_LOGO,
+		CATEGORY_TYPE,
+		USE_YN AS CATEGORY_YN
+	FROM
+		TB_CATEGORY
+	WHERE
+		CATEGORY_TYPE = 'B'
+		AND CATEGORY_PK = #{category_pk}
+</select>
+<!--공지사항 목록 조회-->
+<select id="HAX.CMS.SELECT.008">
+	SELECT
+		NOTICE_PK,
+		TITLE,
+		CONTENT,
+		START_DT,
+		IMG_URL,
+		USE_YN,
+		REG_DT,
+		SEND_PUSH,
+		COUNT(1) OVER() AS TOTAL
+	FROM
+		TB_NOTICE
+	WHERE 
+		USE_YN = TRUE
+		<if test="search_word != null">
+		AND TITLE like #{search_word}
+		</if>
+	ORDER BY
+		REG_DT DESC
+	OFFSET
+		${page}
+	LIMIT
+		${paginate}
+</select>
+<!--공지사항 상세정보-->
+<select id="HAX.CMS.SELECT.009">
+	SELECT
+		NOTICE_PK,
+		TITLE,
+		CONTENT,
+		START_DT,
+		IMG_URL,
+		USE_YN,
+		REG_DT,
+		SEND_PUSH
+	FROM
+		TB_NOTICE
+	WHERE
+		NOTICE_PK = #{notice_pk}
+</select>
+<!--팝업 현재 목록 조회-->
+<select id="HAX.CMS.SELECT.010">
+	SELECT
+		POPUP_PK,
+		POPUP_GUBUN,
+		START_DT,
+		IMG_URL,
+		TITLE,
+		POPUP_TYPE,
+		USE_YN,
+		COUNT(1) OVER() AS TOTAL
+	FROM
+		TB_POPUP
+	WHERE
+		USE_YN = TRUE
+		AND POPUP_GUBUN = 'Notice'
+		AND (END_DT IS NULL OR END_DT &gt;= #{today})		
+	ORDER BY
+		REG_DT DESC
+	OFFSET
+		${page}
+	LIMIT
+		${paginate}
+</select>
+<!--팝업 지난 목록 조회-->
+<select id="HAX.CMS.SELECT.011">
+	SELECT
+		POPUP_PK,
+		POPUP_GUBUN,
+		START_DT,
+		END_DT,
+		IMG_URL,
+		TITLE,
+		POPUP_TYPE,
+		USE_YN,
+		COUNT(1) OVER() AS TOTAL
+	FROM
+		TB_POPUP
+	WHERE
+		POPUP_GUBUN = 'Notice'
+		AND END_DT &lt; #{today}
+	ORDER BY
+		REG_DT DESC
+	OFFSET
+		${page}
+	LIMIT
+		${paginate}
+</select>
+<!--팝업 상세정보-->
+<select id="HAX.CMS.SELECT.012">
+	SELECT
+		POPUP_PK,
+		POPUP_GUBUN,
+		START_DT,
+		END_DT,
+		IMG_URL,
+		TITLE,
+		POPUP_TYPE,
+		REG_DT,
+		FINISH_TYPE,
+		SEND_PUSH,
+		TARGET_PK,
+		USE_YN
+	FROM
+		TB_POPUP
+	WHERE
+		POPUP_GUBUN = 'Notice'
+		AND POPUP_PK = #{popup_pk}
+</select>
+<!--이벤트 팝업 현재 목록 조회-->
+<select id="HAX.CMS.SELECT.013">
+	SELECT
+		A.POPUP_PK,
+		A.POPUP_GUBUN,
+		A.START_DT,
+		A.IMG_URL,
+		A.TITLE,
+		A.POPUP_TYPE,
+		A.USE_YN,
+		A.TARGET_PK,
+		A.INLINK_TYPE,
+		JSON_BUILD_OBJECT(
+			'product_pk', B.PRODUCT_PK,
+			'thumb_img', B.THUMB_IMG,
+			'product_name', B.PRODUCT_NAME,
+			'each_price', B.EACH_PRICE,
+			'event_each_price', B.EVENT_EACH_PRICE) AS productData,
+		COUNT(1) OVER() AS TOTAL
+	FROM
+		TB_POPUP A
+		LEFT OUTER JOIN TB_PRODUCT B
+		ON A.TARGET_PK = B.PRODUCT_PK AND A.INLINK_TYPE = 'PRODUCT'
+	WHERE
+		A.USE_YN = TRUE
+		AND A.POPUP_GUBUN = 'Event'
+		AND (A.END_DT IS NULL OR A.END_DT &gt;= #{today})
+	ORDER BY
+		A.REG_DT DESC
+	OFFSET
+		${page}
+	LIMIT
+		${paginate}
+</select>
+<!--이벤트 팝업 지난 목록 조회-->
+<select id="HAX.CMS.SELECT.014">
+	SELECT
+		A.POPUP_PK,
+		A.POPUP_GUBUN,
+		A.START_DT,
+		A.END_DT,
+		A.IMG_URL,
+		A.TITLE,
+		A.POPUP_TYPE,
+		A.USE_YN,
+		A.TARGET_PK,
+		A.INLINK_TYPE,
+		JSON_BUILD_OBJECT(
+			'product_pk', B.PRODUCT_PK,
+			'thumb_img', B.THUMB_IMG,
+			'product_name', B.PRODUCT_NAME,
+			'each_price', B.EACH_PRICE,
+			'event_each_price', B.EVENT_EACH_PRICE) AS productData,
+		COUNT(1) OVER() AS TOTAL
+	FROM
+		TB_POPUP A
+		LEFT OUTER JOIN TB_PRODUCT B
+		ON A.TARGET_PK = B.PRODUCT_PK AND A.INLINK_TYPE = 'PRODUCT'
+	WHERE
+		A.POPUP_GUBUN = 'Event'
+		AND A.END_DT &lt; #{today}
+	ORDER BY
+		A.REG_DT DESC
+	OFFSET
+		${page}
+	LIMIT
+		${paginate}
+</select>
+<!--이벤트 팝업 상세정보(이벤트)-->
+<select id="HAX.CMS.SELECT.015">
+	SELECT
+		A.POPUP_PK,
+		A.POPUP_GUBUN,
+		A.START_DT,
+		A.END_DT,
+		A.IMG_URL,
+		A.TITLE,
+		A.POPUP_TYPE,
+		A.REG_DT,
+		A.FINISH_TYPE,
+		A.SEND_PUSH,
+		A.USE_YN,
+		B.EVENT_PK,
+		B.TITLE AS EVENT_TITLE
+	FROM
+		TB_POPUP A
+		INNER JOIN TB_EVENT B
+		ON A.TARGET_PK = B.EVENT_PK
+	WHERE
+		POPUP_GUBUN = 'Event'
+		AND POPUP_PK = #{popup_pk}
+</select>
+<!--회사 상품 선택-->
+<select id="HAX.CMS.SELECT.016">
+	SELECT
+		CATEGORY_PK,
+		CATEGORY_NAME,
+		COUNT(1) OVER() AS TOTAL
+	FROM
+		TB_CATEGORY
+	WHERE 1=1
+		<if test="search_word!=null">
+		AND CATEGORY_NAME like #{search_word}
+		</if>
+	ORDER BY
+		REG_DT
+	OFFSET
+		${page}
+	LIMIT
+		${paginate}
+</select>
+<!--상품 목록 조회-->
+<select id="HAX.CMS.SELECT.017">
+	SELECT
+		A.PRODUCT_PK,
+		A.PRODUCT_NAME,
+		A.THUMB_IMG,
+		COALESCE(A.EACH_PRICE,0) AS EACH_PRICE,
+		COALESCE(A.BOX_PRICE,0) AS BOX_PRICE,
+		COALESCE(A.CARTON_PRICE,0) AS CARTON_PRICE,
+		COALESCE(A.EVENT_EACH_PRICE,0) AS EVENT_EACH_PRICE,
+		COALESCE(A.EVENT_BOX_PRICE,0) AS EVENT_BOX_PRICE,
+		COALESCE(A.EVENT_CARTON_PRICE,0) AS EVENT_CARTON_PRICE,
+		A.DISPLAY_SEQ,
+		B.CATEGORY_NAME,
+		A.USE_YN AS PRODUCT_YN,
+		B.USE_YN AS CATEGORY_YN,
+		b.category_type,
+		case when b.category_type = 'B' then '브랜드' when b.category_type = 'N' then '제품군' end as category_type_name,
+		COUNT(1) OVER() AS TOTAL
+	FROM
+		TB_PRODUCT A
+		INNER JOIN TB_CATEGORY B
+		ON A.CATEGORY_PK = B.CATEGORY_PK
+	WHERE 1=1
+		<if test="category_pk != null">
+		AND A.CATEGORY_PK = #{category_pk}
+		</if>
+		<if test="search_word != null">
+		AND A.PRODUCT_NAME like #{search_word}
+		</if>
+		<if test="is_use != null">
+		AND A.USE_YN = TRUE
+		</if>
+	ORDER BY
+		<choose>
+			<when test="sortItem == 'new'">
+            A.REG_DT DESC
+            </when>
+		    <when test="sortItem == 'low'">
+            A.EACH_PRICE ASC
+            </when>
+			<when test="sortItem == 'high'">
+            A.EACH_PRICE DESC
+            </when>
+			<otherwise>
+			A.DISPLAY_SEQ ASC
+			</otherwise>
+		</choose>
+	OFFSET
+		${page}
+	<if test="is_excel == 'false' or is_excel == false">
+	LIMIT
+		${paginate}
+	</if>
+</select>
+<!--상품 상세정보 조회-->
+<select id="HAX.CMS.SELECT.018">
+	SELECT
+		A.PRODUCT_PK,
+		A.PRODUCT_NAME,
+		A.MATERIAL,
+		A.THUMB_IMG,
+		A.DETAIL_IMG1,
+		A.DETAIL_IMG2,
+		A.DETAIL_IMG3,
+		A.DETAIL_IMG4,
+		A.EACH_PRICE,
+		A.BOX_PRICE,
+		A.BOX_UNIT,
+		A.CARTON_PRICE,
+		A.CARTON_UNIT,
+		A.EVENT_EACH_PRICE,
+		A.EVENT_BOX_PRICE,
+		A.EVENT_BOX_UNIT,
+		A.EVENT_CARTON_PRICE,
+		A.EVENT_CARTON_UNIT,
+		A.CAN_POINT,
+		A.MATERIAL,
+		A.IS_NONPOINT,
+		A.IS_SOLDOUT,
+		A.EVENT_EACH_STOCK,
+		A.EVENT_BOX_STOCK,
+		A.EVENT_CARTON_STOCK,
+		a.use_yn,
+		B.CATEGORY_PK,
+		B.CATEGORY_NAME,
+		B.CATEGORY_TYPE
+	FROM
+		TB_PRODUCT A
+		INNER JOIN TB_CATEGORY B
+		ON A.CATEGORY_PK = B.CATEGORY_PK
+	WHERE
+		A.PRODUCT_PK = #{product_pk}
+</select>
+<!--코드 중복체크-->
+<select id="HAX.CMS.SELECT.019">
+	SELECT
+		SPECIAL_CODE
+	FROM
+		TB_MEMBER
+	WHERE
+		SPECIAL_CODE = #{special_code}
+</select>
+<!--카테고리 뎁스 리스트-->
+<select id="HAX.CMS.SELECT.020">
+	SELECT
+		NORMALCATEGORY_PK,
+		DEPTH,
+		GROUP_CODE,
+		CODE,
+		NAME
+	FROM
+		TB_NORMALCATEGORY
+	WHERE
+		USE_YN = TRUE
+		<if test="search_word != null">
+		AND NAME like #{search_word}
+		</if>
+	ORDER BY
+		NORMALCATEGORY_PK DESC
+</select>
+<!--카테고리 제품군 목록 조회-->
+<select id="HAX.CMS.SELECT.021">
+	SELECT
+		A.CATEGORY_PK,
+		A.CATEGORY_NAME,
+		A.CATEGORY_LOGO,
+		A.CATEGORY_TYPE,
+		A.CATEGORY_SEQ,
+		B.NORMALCATEGORY_PK,
+		C.GROUP_CODE AS DEPTH1CODE,
+		D.NAME AS DEPTH1NAME,
+		B.GROUP_CODE AS DEPTH2CODE,
+		C.NAME AS DEPTH2NAME,
+		B.CODE AS DEPTH3CODE,
+		B.NAME AS DEPTH3NAME,
+		A.USE_YN AS CATEGORY_YN,
+		B.USE_YN AS NORMALCATEGORY_YN,
+		COALESCE(G.COUNT,0) AS PRODUCT_COUNT
+	FROM
+		TB_CATEGORY A
+		INNER JOIN TB_NORMALCATEGORY B
+		ON A.NORMALCATEGORY_PK = B.NORMALCATEGORY_PK
+		INNER JOIN 
+			(
+				SELECT 
+					CODE, MAX(GROUP_CODE) AS GROUP_CODE, NAME
+				FROM
+					TB_NORMALCATEGORY 
+				WHERE 
+					USE_YN = 'Y' 
+				 	AND depth = 2
+				GROUP BY
+					CODE, NAME) as C
+		ON B.GROUP_CODE = C.CODE
+		INNER JOIN 
+			(
+				SELECT 
+					CODE, MAX(GROUP_CODE) AS GROUP_CODE, NAME
+				FROM
+					TB_NORMALCATEGORY 
+				WHERE 
+					USE_YN = 'Y' 
+				 	AND depth = 1
+				GROUP BY
+					CODE, NAME) as D
+		ON C.GROUP_CODE = D.CODE
+		LEFT OUTER JOIN (
+			SELECT
+				E.CATEGORY_PK,COUNT(1)
+			FROM
+				TB_CATEGORY E
+				INNER JOIN TB_PRODUCT F
+				ON E.CATEGORY_PK = F.CATEGORY_PK
+			WHERE
+				E.CATEGORY_TYPE = 'N'
+				<if test="is_use != null">
+				AND F.USE_YN = TRUE
+				</if>
+				<if test="is_cms == false">
+				AND E.USE_YN = TRUE
+				</if>
+			GROUP BY
+				E.CATEGORY_PK
+			) AS G
+		ON A.CATEGORY_PK = G.CATEGORY_PK
+	WHERE
+		A.CATEGORY_TYPE = 'N'
+		<if test="search_word != null">
+		AND A.CATEGORY_NAME like #{search_word}
+		</if>
+		<if test="is_cms == false">
+		AND A.USE_YN = TRUE
+		</if>
+	ORDER BY
+		A.CATEGORY_SEQ ASC,REG_DT DESC
+	<!-- OFFSET
+		${page}
+	LIMIT
+		${paginate} -->
+</select>
+<!--카테고리 등록시 뎁스 중복 체크-->
+<select id="HAX.CMS.SELECT.022">
+	SELECT
+		CATEGORY_PK
+	FROM
+		TB_CATEGORY
+	WHERE
+		NORMALCATEGORY_PK = #{normalcategory_pk}
+</select>
+<!--카테고리 등록시 카테고리명 중복 체크-->
+<select id="HAX.CMS.SELECT.023">
+	SELECT
+		CATEGORY_PK
+	FROM
+		TB_CATEGORY
+	WHERE
+		CATEGORY_NAME = #{category_name}
+</select>
+<!--제품 등록시 카테고리 중복 확인-->
+<select id="HAX.CMS.SELECT.024">
+	SELECT
+		PRODUCT_PK
+	FROM
+		TB_PRODUCT
+	WHERE
+		PRODUCT_NAME = #{product_name}
+		AND CATEGORY_PK = #{category_pk}
+</select>
+<!--카테고리 제품군 상세정보-->
+<select id="HAX.CMS.SELECT.025">
+	SELECT
+		A.CATEGORY_PK,
+		A.CATEGORY_NAME,
+		A.CATEGORY_LOGO,
+		A.CATEGORY_TYPE,
+		A.CATEGORY_SEQ,
+		B.NORMALCATEGORY_PK,
+		C.GROUP_CODE AS DEPTH1CODE,
+		D.NAME AS DEPTH1NAME,
+		B.GROUP_CODE AS DEPTH2CODE,
+		C.NAME AS DEPTH2NAME,
+		B.CODE AS DEPTH3CODE,
+		B.NAME AS DEPTH3NAME,
+		A.USE_YN AS CATEGORY_YN,
+		B.USE_YN AS NORMALCATEGORY_YN
+	FROM
+		TB_CATEGORY A
+		INNER JOIN TB_NORMALCATEGORY B
+		ON A.NORMALCATEGORY_PK = B.NORMALCATEGORY_PK
+		INNER JOIN 
+			(
+				SELECT 
+					CODE, MAX(GROUP_CODE) AS GROUP_CODE, NAME
+				FROM
+					TB_NORMALCATEGORY 
+				WHERE 
+					USE_YN = 'Y' 
+				 	AND depth = 2
+				GROUP BY
+					CODE, NAME) as C
+		ON B.GROUP_CODE = C.CODE
+		INNER JOIN 
+			(
+				SELECT 
+					CODE, MAX(GROUP_CODE) AS GROUP_CODE, NAME
+				FROM
+					TB_NORMALCATEGORY 
+				WHERE 
+					USE_YN = 'Y' 
+				 	AND depth = 1
+				GROUP BY
+					CODE, NAME) as D
+		ON C.GROUP_CODE = D.CODE
+	WHERE
+		A.CATEGORY_TYPE = 'N'
+		AND A.CATEGORY_PK = #{category_pk}
+</select>
+<!--영업사원 목록 조회-->
+<select id="HAX.CMS.SELECT.026">
+	SELECT
+		E.*,
+		COUNT(1) OVER() AS TOTAL
+	FROM
+		(SELECT
+			A.MEMBER_PK,
+			A.USER_ID,
+			A.NAME,
+			A.SPECIAL_CODE,
+			A.PHONE,
+			A.EMAIL,
+			A.APPROVAL,
+			A.USE_YN,
+			A.REG_DT,
+			COALESCE(SUM(B.TOTAL_AMOUNT),0) AS TOTAL_AMOUNT,
+			COALESCE(SUM(B.TOTAL_INCENTIVE),0) AS TOTAL_INCENTIVE
+		FROM
+			TB_MEMBER A
+			LEFT OUTER JOIN TB_INCENTIVE B
+			ON A.SPECIAL_CODE = B.AGENT_CODE
+		WHERE 1 = 1
+			AND A.MEMBER_TYPE = 'Salesman'
+			<if test="search_word != null">
+			AND A.NAME like #{search_word}
+			</if>
+		GROUP BY
+			A.MEMBER_PK
+			) AS E
+	WHERE 1 = 1
+		<if test="term_start != null">
+		AND A.REG_DT between #{term_start} and #{term_end}  
+		</if>
+	ORDER BY
+		<choose>
+            <when test="sort_item == 'uname' and sort_type == 'DESC'">
+            E.NAME DESC
+            </when>
+			<when test="sort_item == 'uname' and sort_type == 'ASC'">
+            E.NAME ASC
+            </when>
+			<when test="sort_item == 'order' and sort_type == 'DESC'">
+            COALESCE(E.TOTAL_AMOUNT,0) DESC
+            </when>
+			<when test="sort_item == 'order' and sort_type == 'ASC'">
+            COALESCE(E.TOTAL_AMOUNT,0) ASC
+            </when>
+			<when test="sort_item == 'incentive' and sort_type == 'DESC'">
+            COALESCE(E.TOTAL_INCENTIVE,0) DESC
+            </when>
+			<when test="sort_item == 'incentive' and sort_type == 'ASC'">
+            COALESCE(E.TOTAL_INCENTIVE,0) ASC
+            </when>
+			<otherwise>
+			<if test="sort_type == 'DESC'">
+			E.REG_DT DESC
+			</if>
+			<if test="sort_type == 'ASC'">
+			E.REG_DT ASC
+			</if>
+			</otherwise>
+		</choose>
+	OFFSET
+		${page}
+	<if test="is_excel == 'false' or is_excel == false">
+	LIMIT
+		${paginate}
+	</if>
+</select>
+<!--영업사원 코드 카운트-->
+<select id="HAX.CMS.SELECT.027">
+	SELECT
+		COALESCE(COUNT(*)+1,0) AS COUNT
+	FROM
+		TB_MEMBER
+	WHERE
+		MEMBER_TYPE = 'Salesman'
+</select>
+<!--영업사원 유효한 코드 확인-->
+<select id="HAX.CMS.SELECT.028">
+	SELECT
+		MEMBER_PK
+	FROM
+		TB_MEMBER
+	WHERE
+		MEMBER_TYPE = 'Salesman'
+		AND SPECIAL_CODE = #{agent_code}
+		AND use_yn = true
+</select>
+<!--영업사원 회원담당리스트-->
+<select id="HAX.CMS.SELECT.029">
+	SELECT
+		A.MEMBER_PK,
+		A.NAME,
+		A.SPECIAL_CODE,
+		A.PHONE,
+		A.EMAIL,
+		A.APPROVAL,
+		A.USE_YN,
+		A.REG_DT,
+		B.CODE AS GRADE_CODE,
+		B.NAME AS GRADE_NAME,
+		COUNT(1) OVER() AS TOTAL
+	FROM
+		TB_MEMBER A
+		INNER JOIN TB_GRADE B
+		ON A.GRADE_CODE = B.CODE
+	WHERE
+		A.AGENT_CODE = #{special_code}
+		<if test="search_word != null">
+		AND A.NAME like #{search_word}
+		</if>
+	ORDER BY
+		A.REG_DT DESC
+	OFFSET
+		${page}
+	LIMIT
+		${paginate}
+</select>
+<!--영업사원 상세정보-->
+<select id="HAX.CMS.SELECT.030">
+	SELECT
+		A.*,
+		COALESCE(B.TOTAL_AMOUNT,0) AS TOTAL_AMOUNT,
+		COALESCE(B.TOTAL_INCENTIVE,0) AS TOTAL_INCENTIVE,
+		B.INCENTIVE,
+		COALESCE(COUNT,0) AS CHARGE_COUNT
+	FROM
+		(
+			SELECT
+				MEMBER_PK,
+				USER_ID,
+				EMAIL,
+				APPROVAL,
+				APPROVAL_DT,
+				SPECIAL_CODE,
+				USE_YN,
+				MEMBER_TYPE,
+				PHONE,
+				NAME,
+				IS_SALESMAN,
+				IS_RETIRED,
+				RETIRED_DT,
+				IS_PUSH,
+				REG_DT
+			FROM
+				TB_MEMBER
+			WHERE
+				MEMBER_TYPE = 'Salesman'
+				AND IS_SALESMAN = TRUE
+				AND TEST_YN = FALSE
+				AND MEMBER_PK = #{member_pk}
+				) A
+		LEFT OUTER JOIN (
+			SELECT
+				AGENT_CODE,
+				SUM(TOTAL_INCENTIVE) AS TOTAL_INCENTIVE,
+				SUM(TOTAL_AMOUNT) AS TOTAL_AMOUNT,
+				ARRAY_AGG(JSON_BUILD_OBJECT(
+					'salesman_pk', SALESMAN_PK,
+					'sales_month', SALES_MONTH,
+					'total_incentive', COALESCE(TOTAL_INCENTIVE,0),
+					'total_amount', COALESCE(TOTAL_AMOUNT,0)
+				) ORDER BY REGDATETIME DESC) AS INCENTIVE
+			FROM
+				TB_INCENTIVE
+			GROUP BY
+				AGENT_CODE
+		) B
+		ON A.SPECIAL_CODE = B.AGENT_CODE
+		LEFT OUTER JOIN (
+			SELECT
+				AGENT_CODE, COUNT(1)
+			FROM
+				TB_MEMBER
+			GROUP BY
+				AGENT_CODE
+		) AS C
+		ON A.SPECIAL_CODE = C.AGENT_CODE
+</select>
+<!--영업사원 패스워드 체크-->
+<select id="HAX.CMS.SELECT.031">
+	SELECT
+		MEMBER_PK
+	FROM
+		TB_MEMBER
+	WHERE
+		MEMBER_PK = #{member_pk}
+		AND PASSWORD = encode(encrypt(convert_to(#{nowPassword},'utf8'),#{enc_key},'aes'),'hex')
+</select>
+<!--이력관리 중복 방지-->
+<select id="HAX.CMS.SELECT.032">
+	SELECT
+		MEMBER_PK
+	FROM
+		TB_MEMBER
+	WHERE
+		MEMBER_PK = #{member_pk}
+		AND AGENT_CODE = #{agent_code}
+</select>
+<!--배너목록 조회-->
+<select id="HAX.CMS.SELECT.033">
+	SELECT
+		*,
+		COUNT(1) OVER() AS TOTAL
+	FROM (SELECT
+		BANNER_PK,
+		INLINK_TYPE,
+		LINK_TYPE,
+		TITLE,
+		CONTENT,
+		DISPLAY_SEQ,
+		IMG_URL,
+		REG_DT,
+		TARGET_PK,
+		TARGET_URL,
+		JSON_BUILD_OBJECT('1',1) AS productDetail
+	FROM
+		TB_BANNER
+	WHERE 1=1
+		AND (INLINK_TYPE != 'PRODUCT' OR INLINK_TYPE IS NULL)
+		<if test="search_word != null">
+		AND TITLE like #{search_word}
+		</if>
+	UNION ALL
+	SELECT
+		A.BANNER_PK,
+		A.INLINK_TYPE,
+		A.LINK_TYPE,
+		A.TITLE,
+		A.CONTENT,
+		A.DISPLAY_SEQ,
+		A.IMG_URL,
+		A.REG_DT,
+		A.TARGET_PK,
+		A.TARGET_URL,
+		JSON_BUILD_OBJECT(
+			'product_pk', B.PRODUCT_PK,
+			'thumb_img', B.THUMB_IMG,
+			'product_name', B.PRODUCT_NAME,
+			'each_price', B.EACH_PRICE,
+			'event_each_price', B.EVENT_EACH_PRICE
+		) AS productDetail
+	FROM
+		TB_BANNER A
+		INNER JOIN TB_PRODUCT B
+		ON A.TARGET_PK = B.PRODUCT_PK
+	WHERE
+		A.INLINK_TYPE = 'PRODUCT'
+		<if test="search_word != null">
+		AND A.TITLE like #{search_word}
+		</if>) AS X
+	ORDER BY
+		X.DISPLAY_SEQ ASC,X.REG_DT DESC
+</select>
+<!--배너 상세정보 조회(상품)-->
+<select id="HAX.CMS.SELECT.034">
+	SELECT
+		A.BANNER_PK,
+		A.INLINK_TYPE,
+		A.LINK_TYPE,
+		A.IMG_URL,
+		A.DISPLAY_SEQ,
+		A.REG_DT,
+		A.TITLE,
+		A.CONTENT,
+		A.LINK_TYPE,
+		A.TARGET_PK,
+		A.TARGET_URL,
+		JSON_BUILD_OBJECT(
+			'product_pk',B.PRODUCT_PK,
+			'thumb_img',B.THUMB_IMG,
+			'product_name',B.PRODUCT_NAME,
+			'each_price',B.EACH_PRICE
+		) AS productDetail
+	FROM
+		TB_BANNER A
+		LEFT OUTER JOIN TB_PRODUCT B
+		ON A.TARGET_PK = B.PRODUCT_PK
+	WHERE
+		A.BANNER_PK = #{banner_pk}
+</select>
+<!--사용 가능한 쿠폰 목록-->
+<select id="HAX.CMS.SELECT.035">
+	SELECT
+		A.COUPON_PK,
+		A.REG_DT,
+		A.END_DT,
+		A.PRICE,
+		A.USE_YN,
+		A.ISSUE_REASON,
+		A.UPDATE_REASON,
+		A.MEMBER_PK,
+		B.NAME AS MEMBER_NAME,
+		COUNT(1) OVER() AS TOTAL
+	FROM
+		TB_COUPON A
+		LEFT OUTER JOIN TB_MEMBER B
+		ON A.MEMBER_PK = B.MEMBER_PK
+	WHERE
+		A.USE_YN = TRUE
+		AND A.END_DT &gt; #{today}
+		<if test="member_pk != null">
+		AND A.MEMBER_PK = #{member_pk}
+		</if>
+	ORDER BY
+		A.REG_DT DESC
+	OFFSET
+		${page}
+	LIMIT
+		${paginate}
+</select>
+<!--사용 불가한 쿠폰 목록-->
+<select id="HAX.CMS.SELECT.036">
+	SELECT
+		A.COUPON_PK,
+		A.REG_DT,
+		A.END_DT,
+		A.PRICE,
+		A.USE_YN,
+		A.ISSUE_REASON,
+		A.UPDATE_REASON,
+		A.MEMBER_PK,
+		B.NAME AS MEMBER_NAME,
+		COUNT(1) OVER() AS TOTAL
+	FROM
+		TB_COUPON A
+		LEFT OUTER JOIN TB_MEMBER B
+		ON A.MEMBER_PK = B.MEMBER_PK
+	WHERE
+		(A.END_DT &lt; #{today} OR A.USE_YN = FALSE)
+	ORDER BY
+		A.REG_DT DESC
+	OFFSET
+		${page}
+	LIMIT
+		${paginate}
+</select>
+<!--쿠폰 상세정보 조회-->
+<select id="HAX.CMS.SELECT.037">
+	SELECT
+		A.COUPON_PK,
+		A.COUPON_TYPE,
+		A.REG_DT,
+		A.END_DT,
+		A.PRICE,
+		A.USE_DT,
+		A.USE_YN,
+		A.IS_FIRST,
+		A.ISSUE_REASON,
+		A.UPDATE_REASON,
+		B.MEMBER_PK,
+		B.NAME AS MEMBER_NAME,
+		C.ORDER_PK,
+		C.SETTLE_TYPE,
+		C.REG_DT AS ORDER_RDG_DT
+	FROM
+		TB_COUPON A
+		LEFT OUTER JOIN TB_MEMBER B
+		ON A.MEMBER_PK = B.MEMBER_PK
+		LEFT OUTER JOIN TB_ORDER C
+		ON A.ORDER_PK = C.ORDER_PK
+	WHERE
+		A.COUPON_PK = #{coupon_pk}
+</select>
+<!--이벤트 상품 목록 조회-->
+<select id="HAX.CMS.SELECT.038">
+	SELECT
+		B.CATEGORY_PK,
+		B.CATEGORY_NAME,
+		A.PRODUCT_PK,
+		A.PRODUCT_NAME,
+		A.THUMB_IMG,
+		A.EACH_PRICE,
+		A.EVENT_EACH_PRICE,
+		COUNT(1) OVER() AS TOTAL
+	FROM
+		TB_PRODUCT A
+		INNER JOIN TB_CATEGORY B
+		ON A.CATEGORY_PK = B.CATEGORY_PK
+	WHERE
+		A.USE_YN = TRUE
+		AND A.EVENT_EACH_PRICE != 0
+		<if test="category_pk != null">
+		AND B.CATEGORY_PK = #{category_pk}
+		</if>
+	ORDER BY
+		A.REG_DT DESC
+	OFFSET
+		${page}
+	LIMIT
+		${paginate}
+</select>
+<!--배너 등록 숫자 체크-->
+<select id="HAX.CMS.SELECT.039">
+	SELECT
+		coalesce(COUNT(*),0) as count
+	FROM
+		TB_BANNER
+</select>
+<!--이벤트 목록 조회-->
+<select id="HAX.CMS.SELECT.040">
+	SELECT
+		EVENT_PK,
+		EVENT_GUBUN,
+		TITLE,
+		START_DT,
+		END_DT,
+		REG_DT,
+		COUNT(1) OVER() AS TOTAL
+	FROM
+		TB_EVENT
+	WHERE 1=1
+		<if test="search_word != null">
+		AND TITLE like #{search_word}
+		</if>
+	ORDER BY
+		REG_DT DESC
+	OFFSET
+		${page}
+	LIMIT
+		${paginate}
+</select>
+<!--이벤트 상세정보 조회-->
+<select id="HAX.CMS.SELECT.041">
+	SELECT
+		EVENT_PK,
+		EVENT_GUBUN,
+		START_DT,
+		END_DT,
+		USE_YN,
+		TITLE,
+		REG_DT
+	FROM
+		TB_EVENT
+	WHERE
+		EVENT_PK = #{event_pk}
+</select>
+<!--이벤트 상세정보 상품 조회-->
+<select id="HAX.CMS.SELECT.042">
+	SELECT
+		B.PRODUCT_PK,
+		B.PRODUCT_NAME,
+		B.EACH_PRICE,
+		B.EVENT_EACH_PRICE,
+		B.THUMB_IMG
+	FROM
+		TB_EVENTPRODUCT A
+		INNER JOIN TB_PRODUCT B
+		ON A.PRODUCT_PK = B.PRODUCT_PK
+	WHERE
+		A.EVENT_PK = #{event_pk}
+	ORDER BY
+		A.REG_DT DESC
+</select>
+<!--배너 상세정보(out)-->
+<select id="HAX.CMS.SELECT.043">
+	SELECT
+		BANNER_PK,
+		INLINK_TYPE,
+		LINK_TYPE,
+		IMG_URL,
+		DISPLAY_SEQ,
+		REG_DT,
+		TITLE,
+		CONTENT,
+		LINK_TYPE,
+		TARGET_URL
+	FROM
+		TB_BANNER
+	WHERE
+		BANNER_PK = #{banner_pk}
+</select>
+<!--배너 상세정보(카테고리)-->
+<select id="HAX.CMS.SELECT.044">
+	SELECT
+		A.BANNER_PK,
+		A.INLINK_TYPE,
+		A.LINK_TYPE,
+		A.IMG_URL,
+		A.DISPLAY_SEQ,
+		A.REG_DT,
+		A.TITLE,
+		A.CONTENT,
+		A.LINK_TYPE,
+		A.TARGET_PK,
+		A.TARGET_URL,
+		JSON_BUILD_OBJECT(
+			'category_pk',B.CATEGORY_PK,
+			'category_name',B.CATEGORY_NAME,
+			'category_type',B.CATEGORY_TYPE,
+			'normalcategory_pk',B.NORMALCATEGORY_PK
+		) AS categoryDetail
+	FROM
+		TB_BANNER A
+		LEFT OUTER JOIN TB_CATEGORY B
+		ON A.TARGET_PK = B.CATEGORY_PK
+	WHERE
+		A.BANNER_PK = #{banner_pk}
+</select>
+<!--배너 상세정보(이벤트)-->
+<select id="HAX.CMS.SELECT.045">
+	SELECT
+		A.BANNER_PK,
+		A.INLINK_TYPE,
+		A.LINK_TYPE,
+		A.IMG_URL,
+		A.DISPLAY_SEQ,
+		A.REG_DT,
+		A.TITLE,
+		A.CONTENT,
+		A.LINK_TYPE,
+		A.TARGET_PK,
+		A.TARGET_URL,
+		JSON_BUILD_OBJECT(
+			'event_pk',B.EVENT_PK,
+			'event_gubun',B.EVENT_GUBUN,
+			'title',B.TITLE,
+			'start_dt',B.START_DT,
+			'end_dt',B.END_DT,
+			'use_yn', B.USE_YN
+		) AS eventDetail
+	FROM
+		TB_BANNER A
+		LEFT OUTER JOIN TB_EVENT B
+		ON A.TARGET_PK = B.EVENT_PK
+	WHERE
+		A.BANNER_PK = #{banner_pk}
+</select>
+<!--구매내역 목록 조회-->
+<select id="HAX.CMS.SELECT.046">
+    SELECT
+    	B.PRODUCT,
+		C.NAME AS MEMBER_NAME,
+        A.ORDER_NO,
+    	A.ORDER_PK,
+    	A.REG_DT,
+		to_timestamp(a.reg_dt) + INTERVAL '9 hour' as excelreg_dt,
+    	A.TOTAL_AMOUNT,
+    	CASE WHEN A.ORDER_STATUS = 'WAIT' THEN '입금대기' WHEN A.ORDER_STATUS = 'OVERTIME' THEN '입금기한초과' WHEN A.ORDER_STATUS = 'INCOME' THEN '입금완료' WHEN A.ORDER_STATUS = 'TRANSING' THEN '출고완료' WHEN A.ORDER_STATUS = 'CANCEL_A' THEN '결제취소' WHEN A.ORDER_STATUS = 'CANCEL_B' THEN '주문취소' ELSE '교환요청' END AS ORDER_STATUS_NAME,
+        COUNT(1) OVER() AS TOTAL
+    FROM
+        TB_ORDER A
+		INNER JOIN TB_MEMBER C
+		ON A.MEMBER_PK = C.MEMBER_PK
+        LEFT OUTER JOIN (
+        	SELECT
+        		ORDER_PK,
+        		ARRAY_AGG(JSON_BUILD_OBJECT(
+        			'product_name', PRODUCT_INFO->>'product_name')) AS PRODUCT
+        	FROM
+        		TB_ORDERPRODUCT
+        	GROUP BY
+        		ORDER_PK) B
+        ON A.ORDER_PK = B.ORDER_PK
+    WHERE 1=1
+		<if test="search_word != null">
+		AND C.NAME like #{search_word}
+		</if>
+		<!-- <if test="term_start != null">
+		AND A.REG_DT between #{term_start} AND #{term_end}  
+		</if> -->
+		<if test="special_code != null">
+        AND C.AGENT_CODE = #{special_code}
+		</if>
+		<if test="member_pk != null">
+        AND C.member_pk = #{member_pk}
+		</if>
+		<choose>
+            <when test="term_start != null and term_end != null">
+            AND A.REG_DT between #{term_start} AND #{term_end}
+            </when>
+			<when test="term_start != null and term_end == null">
+            AND A.REG_DT between #{term_start} AND 9999999999
+            </when>
+		    <when test="term_start == null and term_end != null">
+            AND A.REG_DT between 0 AND #{term_end}
+            </when>
+		</choose>
+	ORDER BY
+		<choose>
+            <when test="sort_item == 'uname' and sort_type == 'DESC'">
+            C.NAME DESC
+            </when>
+			<when test="sort_item == 'uname' and sort_type == 'ASC'">
+            C.NAME ASC
+            </when>
+			<when test="sort_item == 'order' and sort_type == 'DESC'">
+            A.TOTAL_AMOUNT DESC
+            </when>
+			<when test="sort_item == 'order' and sort_type == 'ASC'">
+            A.TOTAL_AMOUNT ASC
+            </when>
+			<otherwise>
+			<if test="sort_type == 'DESC'">
+			A.REG_DT DESC
+			</if>
+			<if test="sort_type == 'ASC'">
+			A.REG_DT ASC
+			</if>
+			</otherwise>
+		</choose>
+	OFFSET
+		${page}
+	<if test="is_excel == 'false' or is_excel == false">
+	LIMIT
+		${paginate}
+	</if>
+</select>
+<!--구매 상태변경 포인트-->
+<select id="HAX.CMS.SELECT.047">
+	SELECT
+		REWARD_POINT
+	FROM
+		TB_ORDER
+	WHERE
+		ORDER_PK = #{order_pk}
+		AND REWARD_POINT &gt; 0
+</select>
+<!--환불시 포인트-->
+<select id="HAX.CMS.SELECT.048">
+	SELECT
+		total_amount+coupon_amount+point_amount AS reward_point
+	FROM
+		TB_ORDER
+	WHERE
+		ORDER_PK = #{order_pk}
+</select>
+<!--유저 남은 포인트-->
+<select id="HAX.CMS.SELECT.049">
+    SELECT
+    	SUM(REMAIN_POINT) AS SUM_REMAIN_POINT
+    FROM
+    	TB_RESERVE
+    WHERE
+    	USE_ENDDATE &gt; #{today}
+    	AND MEMBER_PK = #{member_pk}
+</select>
+<!--유저 사라지는 포인트-->
+<select id="HAX.CMS.SELECT.050">
+    SELECT
+    	REMAIN_POINT AS REWARD,
+    	REG_DT AS END_DT
+    FROM
+    	TB_RESERVE
+    WHERE
+    	USE_ENDDATE BETWEEN floor(date_part('epoch'::text, now() - INTERVAL '10 day'))::bigint AND #{today}
+    	AND MEMBER_PK = #{member_pk}
+		AND REMAIN_POINT &gt; 0
+</select>
+<!--포인트 세부-->
+<select id="HAX.CMS.SELECT.051">
+	SELECT
+		A.*,
+		B.CONTENT
+	FROM
+		TB_POINTLOG A
+		INNER JOIN TB_RESERVE B
+		ON A.RESERVE_PK = B.RESERVE_PK
+	WHERE
+		POINTLOG_PK = #{pointlog_pk}
+</select>
+<!--팝업 이벤트 상세정보(상품)-->
+<select id="HAX.CMS.SELECT.052">
+	SELECT
+		A.POPUP_PK,
+		A.POPUP_GUBUN,
+		A.START_DT,
+		A.END_DT,
+		A.IMG_URL,
+		A.TITLE,
+		A.POPUP_TYPE,
+		A.REG_DT,
+		A.FINISH_TYPE,
+		A.SEND_PUSH,
+		A.USE_YN,
+		B.PRODUCT_PK,
+		B.PRODUCT_NAME,
+		B.THUMB_IMG,
+		B.EACH_PRICE
+	FROM
+		TB_POPUP A
+		INNER JOIN TB_PRODUCT B
+		ON A.TARGET_PK = B.PRODUCT_PK
+	WHERE
+		POPUP_GUBUN = 'Event'
+		AND POPUP_PK = #{popup_pk}
+</select>
+<!--통계 데이터(홈)-->
+<select id="HAX.CMS.SELECT.053">
+	SELECT
+		rank_data,
+		today_sales
+	FROM
+		FN_ANALYST_MAIN(#{member_pk},#{startDay},#{endDay})
+</select>
+<!--통계 데이터(홈)(영업)-->
+<select id="HAX.CMS.SELECT.054">
+	SELECT
+		rank_data,
+		today_sales
+	FROM
+		FN_ANALYST_SALESMAN_MAIN(#{special_code},#{startDay},#{endDay})
+</select>
+<!--중지된 이벤트 목록-->
+<select id="HAX.CMS.SELECT.055">
+	SELECT
+		EVENT_PK,
+		EVENT_GUBUN,
+		TITLE,
+		START_DT,
+		END_DT,
+		REG_DT,
+		COUNT(1) OVER() AS TOTAL
+	FROM
+		TB_EVENT
+	WHERE 1=1
+		<if test="search_word != null">
+		AND TITLE like #{search_word}
+		</if>
+		AND END_DT IS NOT NULL
+		AND END_DT &lt; #{today}
+	ORDER BY
+		REG_DT DESC
+	OFFSET
+		${page}
+	LIMIT
+		${paginate}
+</select>
+<!--현재 이벤트 목록-->
+<select id="HAX.CMS.SELECT.056">
+	SELECT
+		EVENT_PK,
+		EVENT_GUBUN,
+		TITLE,
+		START_DT,
+		END_DT,
+		REG_DT,
+		COUNT(1) OVER() AS TOTAL
+	FROM
+		TB_EVENT
+	WHERE 1=1
+		<if test="search_word != null">
+		AND TITLE like #{search_word}
+		</if>
+		AND (END_DT IS NULL OR END_DT &gt;= #{today})
+	ORDER BY
+		REG_DT DESC
+	OFFSET
+		${page}
+	LIMIT
+		${paginate}
+</select>
+<!--영업사원 인센티브-->
+<select id="HAX.CMS.SELECT.057">
+	SELECT
+		B.AGENT_CODE,COALESCE(B.TOTAL_INCENTIVE,0) AS TOTAL_INCENTIVE,COALESCE(B.TOTAL_AMOUNT,0) AS TOTAL_AMOUNT,B.INCENTIVE
+	FROM
+		TB_MEMBER A
+		LEFT OUTER JOIN
+		(SELECT
+			AGENT_CODE,
+			SUM(TOTAL_INCENTIVE) AS TOTAL_INCENTIVE,
+			SUM(TOTAL_AMOUNT) AS TOTAL_AMOUNT,
+			ARRAY_AGG(JSON_BUILD_OBJECT(
+				'salesman_pk', SALESMAN_PK,
+				'sales_month', SALES_MONTH,
+				'total_incentive', TOTAL_INCENTIVE,
+				'total_amount', TOTAL_AMOUNT,
+				'total_point', total_point,
+				'regdatetime', REGDATETIME,
+				'order_data', ORDER_DATA
+				) ORDER BY REGDATETIME DESC) AS INCENTIVE
+			FROM
+				TB_INCENTIVE
+			GROUP BY
+				AGENT_CODE) AS B
+			ON A.SPECIAL_CODE = B.AGENT_CODE
+		WHERE 
+			MEMBER_PK = #{member_pk}
+</select>
+<!--영업사원 인센티브(월별 구매내역)-->
+<select id="HAX.CMS.SELECT.058">
+	SELECT
+		B.INCENTIVE
+	FROM
+		TB_MEMBER A
+		LEFT OUTER JOIN
+			(SELECT
+				AGENT_CODE,
+				SUM(TOTAL_INCENTIVE) AS TOTAL_INCENTIVE,
+				SUM(TOTAL_AMOUNT) AS TOTAL_AMOUNT,
+				ARRAY_AGG(JSON_BUILD_OBJECT(
+					'salesman_pk', SALESMAN_PK,
+					'sales_month', SALES_MONTH,
+					'total_incentive', TOTAL_INCENTIVE,
+					'total_amount', TOTAL_AMOUNT,
+					'total_point', total_point,
+					'regdatetime', REGDATETIME,
+					'order_data', ORDER_DATA
+				) ORDER BY REGDATETIME DESC) AS INCENTIVE
+			FROM
+				TB_INCENTIVE
+			WHERE 
+				SALES_MONTH = #{sales_month}
+			GROUP BY
+				AGENT_CODE) AS B
+		ON A.SPECIAL_CODE = B.AGENT_CODE
+	WHERE
+		A.MEMBER_PK = #{member_pk}
+</select>
+<!--상태변경 푸쉬메시지 발송재료-->
+<select id="HAX.CMS.SELECT.059">
+	select 
+		m.is_push,
+		m.push_token,
+		m.member_pk,m.name,
+		(case when sub.cnt = 1 then sub.product_name else concat(sub.product_name, '외 ', sub.cnt-1,'건') end ) as subTitle
+	from 
+		tb_order as o inner join tb_member as m on o.member_pk = m.member_pk
+	left join ( 
+		select 
+			op.order_pk,
+			count(*) as cnt,
+			max(p.product_name) as product_name
+		from 
+			tb_orderproduct as op 
+			inner join tb_product as p 
+			on op.product_pk = p.product_pk 
+		where 
+			op.order_pk = #{order_pk}
+		group by op.order_pk 
+	) as sub on o.order_pk = sub.order_pk
+	where 
+		o.order_pk = #{order_pk}
+</select>
+<!--공지사항 푸쉬 발송-->
+<select id="HAX.CMS.SELECT.060">
+	SELECT
+		max(MEMBER_PK) AS member_pk,
+		PUSH_TOKEN
+	FROM
+		TB_MEMBER
+	WHERE
+		USE_YN = TRUE
+		AND IS_PUSH = TRUE
+		AND PUSH_TOKEN IS NOT NULL
+	GROUP BY
+		push_token
+</select>
+<!--회원 승인 개별 발송-->
+<select id="HAX.CMS.SELECT.061">
+	SELECT
+		MEMBER_PK,
+		PUSH_TOKEN
+	FROM
+		TB_MEMBER
+	WHERE
+		MEMBER_PK = #{member_pk}
+		AND IS_PUSH = TRUE
+		AND PUSH_TOKEN IS NOT NULL 
+</select>
+<!--승인시 초대포인트(단일)-->
+<select id="HAX.CMS.SELECT.062">
+	SELECT
+		b.member_pk,
+		b.special_code
+	FROM
+		tb_member a
+		LEFT OUTER JOIN tb_member b
+		ON a.recomm_code = b.special_code
+	WHERE
+		A.member_pk = #{member_pk}
+		AND B.use_yn = TRUE
+</select>
+<!--승인시 초대포인트(배열)-->
+<select id="HAX.CMS.SELECT.063">
+	SELECT
+		b.member_pk,
+		b.special_code
+	FROM
+		tb_member a
+		LEFT OUTER JOIN tb_member b
+		ON a.recomm_code = b.special_code
+	WHERE
+		A.member_pk IN (${member})
+		AND B.use_yn = TRUE
+</select>
+<!--공지사항 푸쉬 로그-->
+<select id="HAX.CMS.SELECT.064">
+	SELECT
+		reg_dt
+	FROM
+		tb_notification
+	WHERE
+		gubun = 'NoticeDetailStack'
+		AND route_idx = #{notice_pk}
+	ORDER BY
+		reg_dt DESC
+</select>
+<!--카테고리 엑셀-->
+<select id="HAX.CMS.SELECT.065">
+	SELECT
+		A.CATEGORY_PK,
+		A.CATEGORY_NAME,
+		A.CATEGORY_LOGO,
+		case when A.CATEGORY_TYPE = 'B' then '브랜드' when a.category_type = 'N' then '제품군' end as category_type_name,
+		A.CATEGORY_SEQ,
+		A.USE_YN AS CATEGORY_YN,
+		COALESCE(D.COUNT,0) AS PRODUCT_COUNT
+	FROM
+		TB_CATEGORY A
+		LEFT OUTER JOIN (
+		SELECT
+				B.CATEGORY_PK,COUNT(1)
+			FROM
+				TB_CATEGORY B
+				INNER JOIN TB_PRODUCT C
+				ON B.CATEGORY_PK = C.CATEGORY_PK
+			WHERE
+				B.CATEGORY_TYPE = 'B'
+				<if test="is_use != null">
+				AND B.USE_YN = TRUE
+				</if>
+				<if test="is_cms == false">
+				AND C.USE_YN = TRUE
+				</if>
+			GROUP BY
+				B.CATEGORY_PK
+				) AS D
+		ON A.CATEGORY_PK = D.CATEGORY_PK
+	WHERE
+		A.CATEGORY_TYPE = 'B'
+		<if test="search_word != null">
+		AND A.CATEGORY_NAME like #{search_word}
+		</if>
+		<if test="is_cms == false">
+		AND A.USE_YN = TRUE
+		</if>
+	UNION ALL
+	SELECT
+		A.CATEGORY_PK,
+		A.CATEGORY_NAME,
+		A.CATEGORY_LOGO,
+		case when A.CATEGORY_TYPE = 'B' then '브랜드' when a.category_type = 'N' then '제품군' end as category_type_name,
+		A.CATEGORY_SEQ,
+		A.USE_YN AS CATEGORY_YN,
+		COALESCE(G.COUNT,0) AS PRODUCT_COUNT
+	FROM
+		TB_CATEGORY A
+		INNER JOIN TB_NORMALCATEGORY B
+		ON A.NORMALCATEGORY_PK = B.NORMALCATEGORY_PK
+		INNER JOIN 
+			(
+				SELECT 
+					CODE, MAX(GROUP_CODE) AS GROUP_CODE, NAME
+				FROM
+					TB_NORMALCATEGORY 
+				WHERE 
+					USE_YN = 'Y' 
+				 	AND depth = 2
+				GROUP BY
+					CODE, NAME) as C
+		ON B.GROUP_CODE = C.CODE
+		INNER JOIN 
+			(
+				SELECT 
+					CODE, MAX(GROUP_CODE) AS GROUP_CODE, NAME
+				FROM
+					TB_NORMALCATEGORY 
+				WHERE 
+					USE_YN = 'Y' 
+				 	AND depth = 1
+				GROUP BY
+					CODE, NAME) as D
+		ON C.GROUP_CODE = D.CODE
+		LEFT OUTER JOIN (
+			SELECT
+				E.CATEGORY_PK,COUNT(1)
+			FROM
+				TB_CATEGORY E
+				INNER JOIN TB_PRODUCT F
+				ON E.CATEGORY_PK = F.CATEGORY_PK
+			WHERE
+				E.CATEGORY_TYPE = 'N'
+				<if test="is_use != null">
+				AND E.USE_YN = TRUE
+				</if>
+				<if test="is_cms == false">
+				AND F.USE_YN = TRUE
+				</if>
+			GROUP BY
+				E.CATEGORY_PK
+			) AS G
+		ON A.CATEGORY_PK = G.CATEGORY_PK
+	WHERE
+		A.CATEGORY_TYPE = 'N'
+		<if test="search_word != null">
+		AND A.CATEGORY_NAME like #{search_word}
+		</if>
+		<if test="is_cms == false">
+		AND A.USE_YN = TRUE
+		</if>
+</select>
+<!--UPDATE-->
+<!--유저 회원가입 승인-->
+<update id="HAX.CMS.UPDATE.001">
+	WITH TMP AS (UPDATE
+		TB_MEMBER
+	SET
+		USE_YN = TRUE,
+		APPROVAL = TRUE,
+		APPROVAL_DT = floor(date_part('epoch'::text, now()))::bigint,
+		grade_start = #{gradeStart},
+		grade_end = #{gradeEnd}
+	WHERE
+		member_pk IN (${member})
+		AND USE_YN = FALSE
+	RETURNING
+		MEMBER_PK)
+	SELECT
+		A.MEMBER_PK,
+		A.PUSH_TOKEN
+	FROM
+		TB_MEMBER A
+		INNER JOIN TMP B
+		ON A.MEMBER_PK = B.MEMBER_PK
+	WHERE
+		A.PUSH_TOKEN IS NOT NULL
+</update>
+<!--유저 수정-->
+<update id="HAX.CMS.UPDATE.002">
+	WITH MEMBER AS (
+		UPDATE
+			TB_MEMBER
+		SET
+			EMAIL = #{email},
+			PHONE = #{company_phone},
+			IMG_URL = #{img_url},
+			UP_DT = floor(date_part('epoch'::text, now()))::bigint
+			<if test="agent_code != null">
+			,AGENT_CODE = #{agent_code}
+			</if>
+		WHERE
+			MEMBER_PK = #{member_pk}
+		RETURNING
+			MEMBER_PK
+	)
+	UPDATE
+		TB_COMPANY A
+	SET
+		COMPANY_TYPE = #{company_type},
+		COMPANY_CLASS = #{company_class},
+		COMPANY_ADDRESS = #{company_address},
+		COMPANY_ZIPCODE = #{company_zipcode},
+		COMPANY_CEO = #{company_ceo},
+		COMPANY_PHONE = #{company_phone},
+		COMPANY_EMAIL = #{email},
+		CODE_IMG = #{img_url}
+	FROM
+		MEMBER B
+	WHERE
+		A.MEMBER_PK = B.MEMBER_PK
+	RETURNING
+		A.MEMBER_PK
+</update>
+<!--카테고리 정보 수정-->
+<update id="HAX.CMS.UPDATE.003">
+	UPDATE
+		TB_CATEGORY
+	SET
+		CATEGORY_NAME = #{category_name}, 
+		CATEGORY_LOGO = #{category_logo},
+		CATEGORY_SEQ = #{category_seq},
+		CATEGORY_TYPE = #{category_type},
+		NORMALCATEGORY_PK = #{normalcategory_pk},
+		USE_YN = #{category_yn}
+	WHERE
+		CATEGORY_PK = #{category_pk}
+</update>
+<!--카테고리 삭제-->
+<update id="HAX.CMS.UPDATE.004">
+	<foreach collection="category_array" item="items" separator=";">
+	UPDATE
+		TB_CATEGORY
+	SET
+		USE_YN = FALSE,
+		DEL_DT = floor(date_part('epoch'::text, now()))::bigint
+	WHERE
+		CATEGORY_PK = #{items.category_pk}
+	</foreach>
+</update>
+<!--공지사항 수정-->
+<update id="HAX.CMS.UPDATE.005">
+	UPDATE
+		TB_NOTICE
+	SET
+		TITLE = #{title},
+		CONTENT = #{content},
+		START_DT = #{start_dt},
+		IMG_URL = #{img_url}
+	WHERE
+		NOTICE_PK = #{notice_pk}
+</update>
+<!--공지사항 삭제-->
+<update id="HAX.CMS.UPDATE.006">
+	UPDATE
+		TB_NOTICE
+	SET
+		USE_YN = FALSE
+	WHERE
+		NOTICE_PK = #{notice_pk}
+</update>
+<!--팝업 중지-->
+<update id="HAX.CMS.UPDATE.007">
+	WITH tmp AS (
+	SELECT
+		popup_pk,
+		CASE WHEN start_dt &lt; floor(date_part('epoch'::text, now()))::bigint THEN start_dt 
+		WHEN start_dt &gt;= floor(date_part('epoch'::text, now()))::bigint THEN floor(date_part('epoch'::text, now()))::bigint 
+		END AS start_dt
+	FROM
+		tb_popup
+	WHERE
+		popup_pk = #{popup_pk}
+	)
+	UPDATE
+		TB_POPUP as a
+	SET
+		start_dt = tmp.start_dt,
+		END_DT = floor(date_part('epoch'::text, now()))::bigint
+	FROM
+		tmp
+	WHERE
+		a.POPUP_PK = #{popup_pk}
+</update>
+<!--팝업 수정-->
+<update id="HAX.CMS.UPDATE.008">
+	UPDATE
+		TB_POPUP
+	SET
+		POPUP_GUBUN = #{popup_gubun},
+		POPUP_TYPE = #{popup_type},
+		START_DT = #{start_dt},
+		IMG_URL = #{img_url},
+		TITLE = #{title},
+		SEND_PUSH = #{send_push},
+		END_DT = #{end_dt}
+	WHERE
+		POPUP_PK = #{popup_pk}
+</update>
+<!--팝업 삭제-->
+<update id="HAX.CMS.UPDATE.009">
+	UPDATE
+		TB_POPUP
+	SET
+		USE_YN = FALSE,
+		END_DT = floor(date_part('epoch'::text, now()))::bigint
+	WHERE
+		POPUP_PK = #{popup_pk}
+</update>
+<!--이벤트 팝업 중지-->
+<update id="HAX.CMS.UPDATE.010">
+	WITH tmp AS (
+	SELECT
+		popup_pk,
+		CASE WHEN start_dt &lt; floor(date_part('epoch'::text, now()))::bigint THEN start_dt 
+		WHEN start_dt &gt;= floor(date_part('epoch'::text, now()))::bigint THEN floor(date_part('epoch'::text, now()))::bigint 
+		END AS start_dt
+	FROM
+		tb_popup
+	WHERE
+		popup_pk = #{popup_pk}
+	)
+	UPDATE
+		TB_POPUP as a
+	SET
+		start_dt = tmp.start_dt,
+		END_DT = floor(date_part('epoch'::text, now()))::bigint
+	FROM
+		tmp
+	WHERE
+		a.POPUP_PK = #{popup_pk}
+</update>
+<!--이벤트 팝업 삭제-->
+<update id="HAX.CMS.UPDATE.011">
+	UPDATE
+		TB_POPUP
+	SET
+		USE_YN = FALSE,
+		END_DT = floor(date_part('epoch'::text, now()))::bigint
+	WHERE
+		POPUP_PK = #{popup_pk}
+</update>
+<!--이벤트 팝업 수정-->
+<update id="HAX.CMS.UPDATE.012">
+	UPDATE
+		TB_POPUP
+	SET
+		POPUP_GUBUN = #{popup_gubun},
+		POPUP_TYPE = #{popup_type},
+		START_DT = #{start_dt},
+		IMG_URL = #{img_url},
+		TITLE = #{title},
+		SEND_PUSH = #{send_push},
+		END_DT = #{end_dt},
+		TARGET_PK = #{target_pk},
+		INLINK_TYPE = #{inlink_type}
+	WHERE
+		POPUP_PK = #{popup_pk}
+</update>
+<!--상품 수정-->
+<update id="HAX.CMS.UPDATE.013">
+	UPDATE
+		TB_PRODUCT
+	SET
+		PRODUCT_NAME = #{product_name},
+		CATEGORY_PK = #{category_pk},
+		MATERIAL = #{material},
+		THUMB_IMG = #{thumb_img},
+		DETAIL_IMG1 = #{detail_img1},
+		DETAIL_IMG2 = #{detail_img2},
+		DETAIL_IMG3 = #{detail_img3},
+		DETAIL_IMG4 = #{detail_img4},
+		EACH_PRICE = #{each_price},
+		BOX_PRICE = #{box_price},
+		BOX_UNIT = #{box_unit},
+		CARTON_PRICE = #{carton_price},
+		CARTON_UNIT = #{carton_unit},
+		EVENT_EACH_PRICE = #{event_each_price},
+		EVENT_BOX_PRICE = #{event_box_price},
+		EVENT_BOX_UNIT = #{event_box_unit},
+		EVENT_CARTON_PRICE = #{event_carton_price},
+		EVENT_CARTON_UNIT = #{event_carton_unit},
+		CAN_POINT = #{can_point},
+		IS_NONPOINT = #{is_nonpoint},
+		PROFIT_BOX = #{profit_box},
+		PROFIT_CARTON = #{profit_carton},
+		USE_YN = #{use_yn},
+		IS_SOLDOUT = #{is_soldout},
+		EVENT_EACH_STOCK = #{event_each_stock},
+		EVENT_BOX_STOCK = #{event_box_stock},
+		EVENT_CARTON_STOCK = #{event_carton_stock}
+	WHERE
+		PRODUCT_PK = #{product_pk}
+</update>
+<!--상품 삭제-->
+<update id="HAX.CMS.UPDATE.014">
+	<foreach collection="product_array" item="items" separator=";">
+	UPDATE
+		TB_PRODUCT
+	SET
+		USE_YN = FALSE
+	WHERE
+		PRODUCT_PK = #{items.product_pk}
+	</foreach>
+</update>
+<!--공지사항 이미지 수정-->
+<update id="HAX.CMS.UPDATE.015">
+	UPDATE
+		TB_IMG
+	SET
+		IMG_URL = #{img_url}
+	WHERE
+		IMG_NO = #{img_no}
+	RETURNING
+		IMG_NO
+</update>
+<!--팝업 재공지-->
+<update id="HAX.CMS.UPDATE.016">
+	UPDATE
+		TB_POPUP
+	SET
+		END_DT = null,
+		USE_YN = TRUE
+	WHERE
+		POPUP_PK = #{popup_pk}
+</update>
+<!--이벤트 팝업 재공지-->
+<update id="HAX.CMS.UPDATE.017">
+	UPDATE
+		TB_POPUP
+	SET
+		END_DT = null,
+		USE_YN = TRUE
+	WHERE
+		POPUP_PK = #{popup_pk}
+</update>
+<!--카테고리 정렬 수정-->
+<update id="HAX.CMS.UPDATE.018">
+	<foreach collection="category_array" item="items" separator=";">
+	UPDATE
+		TB_CATEGORY
+	SET
+        CATEGORY_SEQ =#{items.category_seq}
+	WHERE
+		CATEGORY_TYPE = #{category_type}
+		AND CATEGORY_PK = #{items.category_pk}	
+	</foreach>
+</update>
+<!--제품 정렬 수정-->
+<update id="HAX.CMS.UPDATE.019">
+	<foreach collection="product_array" item="items" separator=";">
+	UPDATE
+		TB_PRODUCT
+	SET
+        DISPLAY_SEQ =#{items.display_seq}
+	WHERE 
+		CATEGORY_PK = #{category_pk}
+		AND PRODUCT_PK = #{items.product_pk}	
+	</foreach>
+</update>
+<!--회원 수정시 승인-->
+<update id="HAX.CMS.UPDATE.020">
+	WITH MEMBER AS (
+		UPDATE
+			TB_MEMBER
+		SET
+			EMAIL = #{email},
+			PHONE = #{company_phone},
+			IMG_URL = #{img_url},
+			APPROVAL = TRUE,
+			USE_YN = TRUE,
+			APPROVAL_DT = floor(date_part('epoch'::text, now()))::bigint,
+			grade_start = #{gradeStart},
+			grade_end = #{gradeEnd}
+			<if test="agent_code != null">
+			,AGENT_CODE = #{agent_code}
+			</if>
+		WHERE
+			MEMBER_PK = #{member_pk}
+			AND USE_YN = FALSE
+		RETURNING
+			MEMBER_PK
+	)
+	UPDATE
+		TB_COMPANY A
+	SET
+		COMPANY_TYPE = #{company_type},
+		COMPANY_CLASS = #{company_class},
+		COMPANY_ADDRESS = #{company_address},
+		COMPANY_ZIPCODE = #{company_zipcode},
+		COMPANY_CEO = #{company_ceo},
+		COMPANY_PHONE = #{company_phone},
+		COMPANY_EMAIL = #{email},
+		CODE_IMG = #{img_url}
+	FROM
+		MEMBER B
+	WHERE
+		A.MEMBER_PK = B.MEMBER_PK
+	RETURNING
+		A.MEMBER_PK
+</update>
+<!--상품 품절 수정-->
+<update id="HAX.CMS.UPDATE.021">
+	UPDATE
+		TB_PRODUCT
+	SET
+		IS_SOLDOUT = #{soldout}
+	WHERE
+		PRODUCT_PK = #{product_pk}
+</update>
+<!--영업사원 정보 수정-->
+<update id="HAX.CMS.UPDATE.022">
+	UPDATE
+		TB_MEMBER
+	SET
+		NAME = #{name},
+		EMAIL = #{email},
+		PHONE = #{phone},
+		UP_DT = floor(date_part('epoch'::text, now()))::bigint
+		<if test="password != null">
+		,PASSWORD = encode(encrypt(convert_to(#{password},'utf8'),#{enc_key},'aes'),'hex')
+		</if>
+	WHERE
+		MEMBER_PK = #{member_pk}
+</update>
+<!--영업사원 삭제-->
+<update id="HAX.CMS.UPDATE.023">
+	WITH TMP AS (UPDATE
+		TB_MEMBER
+	SET
+		USE_YN = FALSE,
+		IS_RETIRED = TRUE,
+		DEL_DT = floor(date_part('epoch'::text, now()))::bigint,
+		RETIRED_DT = floor(date_part('epoch'::text, now()))::bigint
+	WHERE
+		MEMBER_PK = #{member_pk}
+	RETURNING
+		SPECIAL_CODE)
+	UPDATE
+		TB_MEMBER
+	SET
+		AGENT_CODE = 'A001'
+	FROM
+		TB_MEMBER A
+		INNER JOIN TMP B
+		ON A.AGENT_CODE = B.SPECIAL_CODE
+	RETURNING
+		A.MEMBER_PK
+</update>
+<!--영업사원 삭제시 관리자로 이관-->
+<update id="HAX.CMS.UPDATE.024">
+	UPDATE
+		TB_MEMBER
+	SET
+		AGENT_CODE = 'A001'
+	WHERE
+		AGENT_CODE = #{agent_code}
+	RETURNING
+		MEMBER_PK
+</update>
+<!--영업사원 비밀번호 수정-->
+<update id="HAX.CMS.UPDATE.025">
+	UPDATE
+		TB_MEMBER
+	SET
+		PASSWORD = encode(encrypt(convert_to(#{newPassword},'utf8'),#{enc_key},'aes'),'hex'),
+		UP_DT = floor(date_part('epoch'::text, now()))::bigint
+	WHERE
+		MEMBER_PK = #{member_pk}
+</update>
+<!--담당 영업사원 수정-->
+<update id="HAX.CMS.UPDATE.026">
+	UPDATE
+		TB_MEMBER
+	SET
+		AGENT_CODE = #{agent_code}
+	WHERE
+		MEMBER_PK = #{member_pk}
+</update>
+<!--회원 푸쉬정보갱신-->
+<update id="HAX.CMS.UPDATE.027">
+	UPDATE
+		TB_MEMBER
+	SET
+		DEVICE_ID = #{device_id},
+		DEVICE_MODEL = #{device_model},
+		OS_TYPE = #{os_type},
+		PUSH_TOKEN = #{push_token}
+	WHERE 
+		MEMBER_PK = #{member_pk}
+</update>
+<!--배너 수정-->
+<update id="HAX.CMS.UPDATE.028">
+	UPDATE
+		TB_BANNER
+	SET
+		INLINK_TYPE = #{inlink_type},
+		IMG_URL = #{img_url},
+		TITLE = #{title}, 
+		CONTENT = #{content},
+		TARGET_PK = #{target_pk},
+		TARGET_URL = #{target_url},
+		LINK_TYPE = #{link_type}
+	WHERE
+		BANNER_PK = #{banner_pk}
+</update>
+<!--이벤트 수정-->
+<update id="HAX.CMS.UPDATE.029">
+	UPDATE
+		TB_EVENT
+	SET
+		EVENT_GUBUN = #{event_gubun},
+		START_DT = #{start_dt},
+		END_DT = #{end_dt},
+		TITLE = #{title}
+	WHERE 
+		EVENT_PK = #{event_pk}
+	RETURNING
+		EVENT_PK
+</update>
+<!--쿠폰 수정-->
+<update id="HAX.CMS.UPDATE.030">
+	UPDATE
+		TB_COUPON
+	SET
+		COUPON_TYPE = #{coupon_type},
+		PRICE = #{price},
+		END_DT = #{end_dt},
+		MEMBER_PK =	#{member_pk},
+		IS_FIRST = 	#{is_first},
+		UPDATE_REASON = #{update_reason}
+	WHERE 
+		COUPON_PK = #{coupon_pk}	
+</update>
+<!--쿠폰 삭제-->
+<update id="HAX.CMS.UPDATE.031">
+	UPDATE
+		TB_COUPON
+	SET
+		USE_YN = FALSE
+	WHERE
+		COUPON_PK = #{coupon_pk}	
+</update>
+<!--배너 정렬 수정-->
+<update id="HAX.CMS.UPDATE.032">
+	<foreach collection="banner_array" item="items" separator=";">
+	UPDATE
+		TB_BANNER
+	SET
+        DISPLAY_SEQ =#{items.display_seq}
+	WHERE
+		BANNER_PK = #{items.banner_pk}	
+	</foreach>
+</update>
+<!--이벤트 삭제-->
+<update id="HAX.CMS.UPDATE.033">
+	with tmp as (
+		SELECT
+			event_pk,
+			CASE WHEN start_dt &lt; floor(date_part('epoch'::text, now()))::bigint THEN start_dt 
+			WHEN start_dt &gt;= floor(date_part('epoch'::text, now()))::bigint THEN floor(date_part('epoch'::text, now()))::bigint 
+			END AS start_dt
+		FROM
+			tb_event
+		WHERE
+			event_pk = #{event_pk}
+	)
+	, EV AS (UPDATE
+		TB_EVENT as a
+	SET
+		USE_YN = FALSE,
+		start_dt = tmp.start_dt,
+		END_DT = floor(date_part('epoch'::text, now()))::bigint
+	FROM
+		tmp
+	WHERE
+		a.EVENT_PK = #{event_pk})
+	, BA AS (DELETE
+	FROM
+		TB_BANNER
+	WHERE
+		TARGET_PK = #{event_pk}
+		AND INLINK_TYPE = 'EVENT'
+		AND LINK_TYPE = 'INLINK')
+	, PO AS (UPDATE
+		TB_POPUP
+	SET
+		USE_YN = FALSE,
+		END_DT = floor(date_part('epoch'::text, now()))::bigint 
+	WHERE
+		TARGET_PK = #{event_pk} 
+		AND INLINK_TYPE = 'EVENT' and POPUP_GUBUN = 'Event')
+	DELETE
+	FROM
+		TB_EVENTPRODUCT
+	WHERE
+		EVENT_PK = #{event_pk}
+</update>
+<!--팝업 다중 삭제-->
+<update id="HAX.CMS.UPDATE.034">
+	<foreach collection="popup_array" item="items" separator=";">
+	UPDATE
+		TB_POPUP
+	SET
+		USE_YN = FALSE,
+		END_DT = floor(date_part('epoch'::text, now()))::bigint
+	WHERE
+		POPUP_PK = #{items.popup_pk}
+	</foreach>
+</update>
+<!--구매 상태변경-->
+<update id="HAX.CMS.UPDATE.035">
+	WITH TMP AS (
+		UPDATE
+			TB_ORDER
+		SET
+			ORDER_STATUS = #{newOrderStatus}
+		WHERE 
+			ORDER_PK = #{order_pk}
+			AND MEMBER_PK = #{member_pk}
+	)
+    INSERT INTO
+        TB_ORDERHISTORY
+            (
+                ORDER_PK,
+                COMMENT,
+                HISTORY_TYPE
+            )
+    VALUES
+        (
+            #{order_pk},
+            #{comment},
+            #{history_type}
+        )
+</update>
+<!--공지사항 푸쉬 여부-->
+<update id="HAX.CMS.UPDATE.036">
+	UPDATE
+		tb_notice
+	SET
+		send_push = true
+	WHERE 
+		notice_pk = #{routeIdx}
+</update>
+<!--이벤트 중지-->
+<update id="HAX.CMS.UPDATE.037">
+	WITH tmp AS (
+		SELECT
+			event_pk,
+			CASE WHEN start_dt &lt; floor(date_part('epoch'::text, now()))::bigint THEN start_dt 
+			WHEN start_dt &gt;= floor(date_part('epoch'::text, now()))::bigint THEN floor(date_part('epoch'::text, now()))::bigint 
+			END AS start_dt
+		FROM
+			tb_event
+		WHERE
+			event_pk = #{event_pk}
+	)
+	, ev AS (
+		UPDATE
+			tb_event AS a
+		SET
+			start_dt = tmp.start_dt,
+			end_dt = floor(date_part('epoch'::text, now()))::bigint
+		FROM
+			tmp
+		WHERE
+			a.event_pk = #{event_pk}
+	)
+	, ba AS (
+		DELETE
+		FROM
+			tb_banner
+		WHERE
+			target_pk = #{event_pk}
+			AND inlink_type = 'event'
+			AND link_type = 'inlink'
+	)
+	, po AS (
+		UPDATE
+			tb_popup
+		SET
+			use_yn = FALSE,
+			end_dt = floor(date_part('epoch'::text, now()))::bigint 
+		WHERE
+			target_pk = #{event_pk} 
+			AND inlink_type = 'event' AND popup_gubun = 'event'
+	)
+	DELETE
+	FROM
+		tb_eventproduct
+	WHERE
+		event_pk = #{event_pk}
+</update>
+<!--INSERT-->
+<!--카테고리 등록-->
+<insert id="HAX.CMS.INSERT.001">
+	INSERT INTO
+		TB_CATEGORY
+		(
+			CATEGORY_NAME, 
+			CATEGORY_LOGO,
+			CATEGORY_SEQ,
+			CATEGORY_TYPE,
+			NORMALCATEGORY_PK,
+			REG_MEMBER
+		)
+	VALUES
+		(
+			#{category_name}, 
+			#{category_logo},
+			<choose>
+            <when test="category_type == 'N'">
+            (SELECT COUNT(*) FROM TB_CATEGORY WHERE USE_YN = TRUE and CATEGORY_TYPE ='N') +1,
+            </when>
+			<when test="category_type == 'B'">
+            (SELECT COUNT(*) FROM TB_CATEGORY WHERE USE_YN = 'Y' and CATEGORY_TYPE ='B') +1,
+            </when>
+			</choose>
+			#{category_type},
+			#{normalcategory_pk},
+			#{reg_member}
+		)
+</insert>
+<!--공지사항 등록-->
+<insert id="HAX.CMS.INSERT.002">
+	INSERT INTO
+		TB_NOTICE
+		(
+			TITLE,
+			CONTENT,
+			START_DT,
+			IMG_URL
+			)
+	VALUES
+		(
+			#{title},
+			#{content},
+			#{start_dt},
+			#{img_url}
+			)
+	RETURNING
+		NOTICE_PK
+</insert>
+<!--쿠폰 등록-->
+<insert id="HAX.CMS.INSERT.003">
+	INSERT INTO
+		TB_COUPON
+		(
+			COUPON_TYPE,
+			PRICE,
+			END_DT,
+			MEMBER_PK,
+			IS_FIRST,
+			ISSUE_REASON
+			)
+	VALUES
+		<foreach collection="target_array" item="items" separator=",">
+		(
+			#{coupon_type},
+			#{price},
+			#{end_dt},
+			#{items},
+			#{is_first},
+			#{issue_reason}
+			)
+		</foreach>
+</insert>
+<!--팝업 등록-->
+<insert id="HAX.CMS.INSERT.004">
+	INSERT INTO
+		TB_POPUP
+		(
+			POPUP_GUBUN,
+			POPUP_TYPE,
+			START_DT,
+			IMG_URL,
+			SEND_PUSH,
+			END_DT,
+			TITLE
+		)
+	VALUES
+		(
+			#{popup_gubun},
+			#{popup_type},
+			#{start_dt},
+			#{img_url},
+			#{send_push},
+			#{end_dt},
+			#{title}
+		)
+</insert>
+<!--이벤트 팝업 등록-->
+<insert id="HAX.CMS.INSERT.005">
+	INSERT INTO
+		TB_POPUP
+		(
+			POPUP_GUBUN,
+			POPUP_TYPE,
+			START_DT,
+			IMG_URL,
+			SEND_PUSH,
+			END_DT,
+			TITLE,
+			TARGET_PK,
+			INLINK_TYPE
+		)
+	VALUES
+		(
+			#{popup_gubun},
+			#{popup_type},
+			#{start_dt},
+			#{img_url},
+			#{send_push},
+			#{end_dt},
+			#{title},
+			#{target_pk},
+			#{inlink_type}
+		)
+</insert>
+<!--상품 등록-->
+<insert id="HAX.CMS.INSERT.006">
+	INSERT INTO
+		TB_PRODUCT
+		(
+			PRODUCT_NAME,
+			CATEGORY_PK,
+			MATERIAL,
+			THUMB_IMG,
+			DETAIL_IMG1,
+			DETAIL_IMG2,
+			DETAIL_IMG3,
+			DETAIL_IMG4,
+			EACH_PRICE,
+			BOX_PRICE,
+			BOX_UNIT,
+			CARTON_PRICE,
+			CARTON_UNIT,
+			EVENT_EACH_PRICE,
+			EVENT_BOX_PRICE,
+			EVENT_BOX_UNIT,
+			EVENT_CARTON_PRICE,
+			EVENT_CARTON_UNIT,
+			DISPLAY_SEQ,
+			CAN_POINT,
+			IS_NONPOINT,
+			PROFIT_BOX,
+			PROFIT_CARTON,
+			EVENT_EACH_STOCK,
+			EVENT_BOX_STOCK,
+			EVENT_CARTON_STOCK,
+			REG_MEMBER,
+			use_yn
+		)
+	VALUES
+		(
+		#{product_name},
+		#{category_pk},
+		#{material},
+		#{thumb_img},
+		#{detail_img1},
+		#{detail_img2},
+		#{detail_img3},
+		#{detail_img4},
+		#{each_price},
+		#{box_price},
+		#{box_unit},
+		#{carton_price},
+		#{carton_unit},
+		#{event_each_price},
+		#{event_box_price},
+		#{event_box_unit},
+		#{event_carton_price},
+		#{event_carton_unit},
+		(SELECT COUNT(*) FROM TB_PRODUCT WHERE USE_YN = TRUE AND CATEGORY_PK = #{category_pk}) +1,
+		#{can_point},
+		#{is_nonpoint},
+		#{profit_box},
+		#{profit_carton},
+		#{event_each_stock},
+		#{event_box_stock},
+		#{event_carton_stock},
+		#{reg_member},
+		#{use_yn}
+		)
+</insert>
+<!--영업사원 등록-->
+<insert id="HAX.CMS.INSERT.007">
+	INSERT INTO
+		TB_MEMBER
+		(
+			USER_ID,
+			PASSWORD,
+			NAME,
+			EMAIL,
+			PHONE,
+			IS_SALESMAN,
+			MEMBER_TYPE,
+			SPECIAL_CODE,
+			APPROVAL,
+			APPROVAL_DT,
+			USE_YN
+		)
+	VALUES
+		(
+			#{user_id},
+			encode(encrypt(convert_to(#{password},'utf8'),#{enc_key},'aes'),'hex'),
+			#{name},
+			#{email},
+			#{phone},
+			#{is_salesman},
+			#{member_type},
+			#{special_code},
+			TRUE,
+			floor(date_part('epoch'::text, now()))::bigint,
+			TRUE
+		)
+</insert>
+<!--회원 수정시 영업사원 변경이력-->
+<insert id="HAX.CMS.INSERT.008">
+    INSERT INTO
+        TB_AGENT_LOG
+        (
+            MEMBER_PK,
+            AGENT_CODE
+        )
+    VALUES
+        (
+            #{member_pk},
+            #{agent_code}
+        )
+</insert>
+<!--영업사원 삭제시 담당 이관-->
+<insert id="HAX.CMS.INSERT.009">
+    INSERT INTO
+        TB_AGENT_LOG
+        (
+            MEMBER_PK,
+            AGENT_CODE
+        )
+    VALUES
+	    <foreach collection="updateResult2" item="items" separator=",">
+            ( ${items.member_pk}, 'A001')
+        </foreach>
+</insert>
+<!--배너 등록-->
+<insert id="HAX.CMS.INSERT.010">
+	INSERT INTO
+		TB_BANNER
+		(
+			INLINK_TYPE,
+			IMG_URL,
+			DISPLAY_SEQ,
+			CONTENT,
+			TITLE,
+			TARGET_PK,
+			TARGET_URL,
+			LINK_TYPE
+			)
+	VALUES
+		(
+			#{inlink_type},
+			#{img_url},
+			(SELECT COUNT(*) FROM TB_BANNER) +1,
+			#{content},
+			#{title},
+			#{target_pk},
+			#{target_url},
+			#{link_type}
+		)
+</insert>
+<!--이벤트 등록-->
+<insert id="HAX.CMS.INSERT.011">
+	INSERT INTO
+		TB_EVENT
+		(
+			EVENT_GUBUN,
+			START_DT,
+			END_DT,
+			TITLE
+		)
+	VALUES
+		(
+			#{event_gubun},
+			#{start_dt},
+			#{end_dt},
+			#{title}
+		)
+	RETURNING
+		EVENT_PK
+</insert>
+<!--이벤트 상품 등록-->
+<insert id="HAX.CMS.INSERT.012">
+	INSERT INTO
+		TB_EVENTPRODUCT
+		(
+			EVENT_PK,
+			PRODUCT_PK
+		)
+	VALUES
+		<foreach collection="product" item="items" separator=",">
+		(
+			#{event_pk},
+			#{items.product_pk}
+		)
+		</foreach>
+</insert>
+<!--이벤트 상품 수정-->
+<insert id="HAX.CMS.INSERT.013">
+	WITH TMP AS (
+		DELETE
+		FROM
+			TB_EVENTPRODUCT
+		WHERE
+			EVENT_PK = #{event_pk2}
+	)
+	INSERT INTO
+		TB_EVENTPRODUCT
+		(
+			EVENT_PK,
+			PRODUCT_PK
+		)
+	VALUES
+		<foreach collection="product" item="items" separator=",">
+		(
+			#{event_pk2},
+			#{items.product_pk}
+		)
+		</foreach>
+</insert>
+<!--상품구매 출고 포인트부여-->
+<insert id="HAX.CMS.INSERT.014">
+    WITH TEMP AS(
+        INSERT INTO
+        TB_RESERVE
+        (
+            MEMBER_PK,
+            CONTENT,
+            REWARD_POINT,
+            REWARD_TYPE,
+            REWARD_GUBUN,
+            USE_ENDDATE,
+            REMAIN_POINT,
+			ORDER_PK
+        )
+    VALUES
+        (
+            #{member_pk},
+            #{content},
+            #{reward_point},
+            #{reward_type},
+            #{reward_gubun},
+            floor(date_part('epoch'::text, now() + INTERVAL '3 month'))::bigint,
+            #{reward_point},
+			#{order_pk}
+        )
+    RETURNING
+        RESERVE_PK
+        )
+    INSERT INTO
+        TB_POINTLOG
+            (
+                RESERVE_PK,
+                REWARD_POINT,
+                ORDER_PK,
+				REWARD_GUBUN
+            )
+    SELECT
+        RESERVE_PK,
+        #{reward_point},
+        #{order_pk},
+		#{reward_gubun}
+    FROM
+        TEMP
+</insert>
+<!--상품 환급처리 포인트부여-->
+<insert id="HAX.CMS.INSERT.015">
+   WITH TEMP AS(
+        INSERT INTO
+        TB_RESERVE
+        (
+            MEMBER_PK,
+            CONTENT,
+            REWARD_POINT,
+            REWARD_TYPE,
+            REWARD_GUBUN,
+            USE_ENDDATE,
+            REMAIN_POINT,
+			ORDER_Pk
+        )
+    VALUES
+        (
+            #{member_pk},
+            #{content},
+            #{reward_point},
+            #{reward_type},
+            #{reward_gubun},
+            floor(date_part('epoch'::text, now() + INTERVAL '3 month'))::bigint,
+            #{reward_point},
+			#{order_pk}
+        )
+    RETURNING
+        RESERVE_PK
+        )
+    INSERT INTO
+        TB_POINTLOG
+            (
+                RESERVE_PK,
+                REWARD_POINT,
+                ORDER_PK,
+				REWARD_GUBUN
+            )
+    SELECT
+        RESERVE_PK,
+        #{reward_point},
+        #{order_pk},
+		#{reward_gubun}
+    FROM
+        TEMP
+</insert>
+<!--배송시 푸쉬기록-->
+<insert id="HAX.CMS.INSERT.016">
+	INSERT INTO
+		TB_NOTIFICATION
+			(
+				GUBUN,
+				TARGET,
+				route_idx
+			)
+	VALUES
+		(
+			#{gubun},
+			#{target},
+			#{routeIdx}
+		)
+</insert>
+<!--승인시 초대포인트(단일)-->
+<insert id="HAX.CMS.INSERT.017">
+   WITH TEMP AS(
+        INSERT INTO
+        TB_RESERVE
+        (
+            MEMBER_PK,
+            CONTENT,
+            REWARD_POINT,
+            REWARD_TYPE,
+            REWARD_GUBUN,
+            USE_ENDDATE,
+            REMAIN_POINT
+        )
+    VALUES
+        (
+            #{member_pk},
+            #{content},
+            #{reward_point},
+            #{reward_type},
+            #{reward_gubun},
+            floor(date_part('epoch'::text, now() + INTERVAL '3 month'))::bigint,
+            #{reward_point}
+        )
+    RETURNING
+        RESERVE_PK
+        )
+    INSERT INTO
+        TB_POINTLOG
+            (
+                RESERVE_PK,
+                REWARD_POINT,
+                ORDER_PK,
+                REWARD_GUBUN,
+                SPECIAL_CODE
+            )
+    SELECT
+        RESERVE_PK,
+        #{reward_point},
+        0,
+        #{reward_gubun},
+        #{special_code}
+    FROM
+        TEMP
+</insert>
+<!--승인시 초대포인트(배열)-->
+<insert id="HAX.CMS.INSERT.018">
+	<foreach collection="selectResult" item="items" separator=";">
+   WITH TEMP AS(
+        INSERT INTO
+        TB_RESERVE
+        (
+            MEMBER_PK,
+            CONTENT,
+            REWARD_POINT,
+            REWARD_TYPE,
+            REWARD_GUBUN,
+            USE_ENDDATE,
+            REMAIN_POINT
+        )
+    VALUES
+        (
+            #{items.member_pk},
+            #{content},
+            #{reward_point},
+            #{reward_type},
+            #{reward_gubun},
+            floor(date_part('epoch'::text, now() + INTERVAL '3 month'))::bigint,
+            #{reward_point}
+        )
+    RETURNING
+        RESERVE_PK
+        )
+    INSERT INTO
+        TB_POINTLOG
+            (
+                RESERVE_PK,
+                REWARD_POINT,
+                ORDER_PK,
+                REWARD_GUBUN,
+                SPECIAL_CODE
+            )
+    SELECT
+        RESERVE_PK,
+        #{reward_point},
+        0,
+        #{reward_gubun},
+        #{items.special_code}
+    FROM
+        TEMP
+	</foreach>
+</insert>
+<!--DELETE-->
+<!--배너 삭제-->
+<delete id="HAX.CMS.DELETE.001">
+	DELETE
+	FROM
+		TB_BANNER
+	WHERE
+		BANNER_PK = #{banner_pk}
+	RETURNING
+		BANNER_PK
+</delete>
+<!--배너 다중 삭제-->
+<delete id="HAX.CMS.DELETE.002">
+	<foreach collection="banner_array" item="items" separator=";">
+	DELETE
+	FROM
+		TB_BANNER
+	WHERE
+		BANNER_PK = #{items.banner_pk}
+	RETURNING
+		BANNER_PK
+	</foreach>
+</delete>
+</mapper>

@@ -1,0 +1,4059 @@
+<!/*  /server/sql/sql.xml /* >
+
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="JAL">  
+	
+	<select id="JAL_USER.AUTH.REQUEST">
+		INSERT INTO TB_AUTH AS A (
+			  USER_EMAIL 
+			, AUTH_NO 
+			, AUTH_TP
+		)
+		VALUES (
+			  LOWER(#{user_email}) 
+			, #{auth_no} 
+			, ${auth_tp} 
+		) 
+		ON CONFLICT (AUTH_TP, USER_EMAIL) DO 
+		UPDATE 
+	    SET 
+	    	  AUTH_YN = FALSE 
+	    	, AUTH_NO = EXCLUDED.AUTH_NO 
+	    	, ATTEMPT_CNT = A.ATTEMPT_CNT + 1 
+	    	, UP_DT = (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT 
+	    RETURNING 
+			  UP_DT 
+    </select>
+    
+    <select id="JAL_USER.AUTH.CONFIRM">
+		UPDATE 
+			TB_AUTH 
+		SET 
+			  AUTH_YN = TRUE 
+			, UP_DT = (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT 
+		WHERE 1 = 1 
+			AND AUTH_TP = #{auth_tp} 
+			AND USER_EMAIL = LOWER(#{user_email}) 
+			AND AUTH_NO = #{auth_no} 
+			AND AUTH_YN = FALSE 
+		RETURNING 
+			  USER_EMAIL 
+    </select>
+    
+    <select id="JAL_USER.SIGNUP">
+		/* 유저 정보 가져오기 */
+		INSERT INTO TB_USER ( 
+			  USER_EMAIL
+			, USER_PASS 
+			, USER_NM 
+			, SIGNUP_CD_ID 
+			, MOBILE_NO
+		) 
+		SELECT 
+			  LOWER(#{user_email}) 
+			, #{user_pass} 
+			, #{user_nm} 
+			, A.CD_ID 
+			, #{mobile_no} 
+		FROM 
+			TB_CODE A 
+		WHERE 1 = 1 
+			AND A.CD_ID = #{signup_cd_id} 
+		RETURNING 
+			  USER_NO 
+			, USER_ID 
+			, JOIN_DT 
+			, SUBSTRING(USER_PASS || JOIN_DT::TEXT, 0, 10) AS TOKEN_KEY 
+    </select>
+    
+    
+    <select id="JAL_USER.JAL.EXISTS">
+		SELECT 
+			  A.USER_NO 
+			, A.USER_ID 
+			, A.SIGNUP_CD_ID 
+			, A.JOIN_DT 
+			, B.CODE_DESC 
+		FROM 
+			TB_USER A 
+		LEFT OUTER JOIN TB_CODE B ON B.CD_ID = A.SIGNUP_CD_ID 
+		WHERE 1 = 1 
+			AND A.USER_STATUS = 0 
+			AND A.USER_EMAIL = LOWER(#{user_email}) 
+			AND A.SIGNUP_CD_ID = #{signup_cd_id} 
+		LIMIT 
+			1 
+    </select>
+    
+    <select id="JAL_USER.EMAIL.PASSWORD">
+		SELECT 
+			  A.USER_NO 
+			, A.USER_ID 
+			, A.SIGNUP_CD_ID 
+			, A.JOIN_DT 
+			, SUBSTRING(USER_PASS || JOIN_DT::TEXT, 0, 10) AS TOKEN_KEY 
+		FROM 
+			TB_USER A 
+		WHERE 1 = 1 
+			AND A.USER_STATUS = 0 
+			AND A.USER_EMAIL = LOWER(#{user_email}) 
+			AND A.SIGNUP_CD_ID = #{signup_cd_id}
+			<if test="is_jal_sns_user != null">
+	        AND A.USER_PASS = #{user_pass} 
+	        </if>
+		LIMIT 
+			1 
+    </select>
+    
+    <select id="JAL_USER.FIND.BY.EMAIL">
+		SELECT 
+			  A.USER_NO 
+			, A.USER_ID 
+			, A.USER_EMAIL 
+			, A.SIGNUP_CD_ID 
+			, A.JOIN_DT 
+			, B.CODE_DESC || ' 회원가입' AS SIGNUP_TYPE 
+		FROM 
+			TB_USER A 
+		LEFT OUTER JOIN TB_CODE B ON 1 = 1 
+			AND B.CD_ID = A.SIGNUP_CD_ID 
+			AND B.USE_YN = TRUE 
+		WHERE 1 = 1 
+			AND A.USER_STATUS = 0 
+			AND A.USER_EMAIL = LOWER(#{user_email}) 
+		ORDER BY 
+			USER_NO DESC 
+    </select>
+    
+    <select id="JAL_USER.FIND.BY.EMAIL.1">
+		SELECT 
+			  A.USER_NO 
+			, A.USER_ID 
+			, A.SIGNUP_CD_ID 
+			, A.JOIN_DT 
+		FROM 
+			TB_USER A 
+		WHERE 1 = 1 
+			AND A.USER_STATUS = 0 
+			AND A.USER_EMAIL = LOWER(#{user_email}) 
+			AND A.SIGNUP_CD_ID = 'SIGNUP_TP_COMMON' 
+		LIMIT 
+			1 
+    </select>
+    
+    <select id="JAL_USER.CHANGE.PASSWORD">
+		UPDATE 
+			TB_USER 
+		SET 
+			  USER_PASS = #{user_pass} 
+			, UP_DT = (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT 
+		WHERE 1 = 1 
+			AND USER_STATUS = 0 
+			AND USER_EMAIL = LOWER(#{user_email}) 
+			AND SIGNUP_CD_ID = 'SIGNUP_TP_COMMON' 
+		RETURNING 
+			  SUBSTRING(USER_PASS || JOIN_DT::TEXT, 0, 10) AS TOKEN_KEY 
+			, USER_ID 
+    </select>
+    
+    <update id="JAL.USER.DEACTIVATE">
+    	UPDATE 
+    		TB_USER 
+    	SET 
+    		  DEL_DT = (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT 
+    		, USER_STATUS = USER_NO 
+    	WHERE 1 = 1 
+    		AND USER_NO = ${user_no} 
+    		AND USER_STATUS = 0 
+    </update>
+    
+    <select id="JAL_USER.INFO">
+		SELECT 
+			  A.USER_NM 
+			, A.USER_EMAIL 
+			, A.MOBILE_NO 
+			, A.SIGNUP_CD_ID 
+			, A.JOIN_DT 
+			, A.PRIVACY_YN 
+			, A.EMAIL_YN 
+			, A.SMS_YN 
+			, (SELECT B.CODE_DESC FROM TB_CODE B WHERE B.CD_ID = A.SIGNUP_CD_ID) AS SINGUP_TYPE 
+			, COALESCE( (SELECT B.MEDIA_URL FROM TB_MEDIA B WHERE B.MEDIA_GB_CODE = 'USER_PROFILE' AND B.MEDIA_GB_NO = A.USER_NO AND B.USE_YN = TRUE), 'https://jal-public-file.s3-ap-northeast-1.amazonaws.com/jal/profile.png') AS PROFILE_URL 
+			, USER_BANK.BANK_CD_ID 
+			, USER_BANK.ACCN_NO 
+			, USER_BANK.CUST_NM 
+			, (SELECT B.CODE_DESC FROM TB_CODE B WHERE B.CD_ID = USER_BANK.BANK_CD_ID) AS BANK_NM 
+		FROM 
+			TB_USER A 
+		LEFT OUTER JOIN TB_USER_BANK AS USER_BANK ON 1 = 1 
+			AND A.USER_NO = USER_BANK.USER_NO 
+		WHERE 1 = 1 
+			AND A.USER_STATUS = 0 
+			AND A.USER_EMAIL = LOWER(#{user_email}) 
+    </select>
+    
+    <update id="JAL.USER.PROFILE.UPDATE">
+    	WITH DELETE_MEDIA AS (
+    		DELETE 
+    		FROM 
+    			TB_MEDIA 
+    		WHERE 1 = 1 
+    			AND MEDIA_GB_CODE = 'USER_PROFILE' 
+    			AND MEDIA_GB_NO = ${user_no} 
+    			AND MEDIA_TYPE = 0 
+    		RETURNING 
+    			MEDIA_GB_NO 
+    	)
+    	INSERT INTO TB_MEDIA AS A (
+			  MEDIA_GB_CODE 
+			, MEDIA_GB_NO 
+			, MEDIA_TYPE 
+			, MEDIA_URL 
+		)
+		VALUES (
+			  'USER_PROFILE'
+			, COALESCE( (SELECT MEDIA_GB_NO FROM DELETE_MEDIA LIMIT 1), ${user_no} ) 
+			, 0 
+			, #{media_url} 
+		) 
+    </update>
+    
+    <update id="JAL.USER.AGREE.UPDATE">
+    	UPDATE 
+    		TB_USER 
+    	SET 
+    		  PRIVACY_YN = #{privacy_yn} 
+    		, EMAIL_YN = #{email_yn} 
+    		, SMS_YN = #{sms_yn} 
+    	WHERE 1 = 1 
+    		AND USER_NO = ${user_no} 
+    </update>
+    
+    <update id="JAL.USER.BANK.INFO.UPDATE">
+    	INSERT INTO TB_USER_BANK AS A (
+    		  USER_NO 
+    		, BANK_CD_ID 
+    		, ACCN_NO 
+    		, CUST_NM 
+    	) 
+		SELECT 
+			  ${user_no} 
+			, CD_ID 
+			, #{accn_no} 
+			, #{cust_nm} 
+		FROM 
+			TB_CODE 
+		WHERE 1 = 1 
+			AND CD_ID = #{bank_cd_id} 
+			AND USE_YN = TRUE 
+			AND REL_COL = 'BANK_CODE' 
+		ON CONFLICT (USER_NO) DO 
+		UPDATE 
+	    SET 
+	    	  BANK_CD_ID = EXCLUDED.BANK_CD_ID
+	    	, ACCN_NO = EXCLUDED.ACCN_NO
+	    	, CUST_NM = EXCLUDED.CUST_NM 
+    </update>
+    
+    
+    <select id="JAL.MENU.LIST">
+		SELECT 
+			  A.CODE_NO 
+			, A.CD_ID 
+			, A.CODE_DESC AS TITLE 
+			, B.MEDIA_NO 
+			, COALESCE(B.MEDIA_URL, 'https://jal-public-file.s3-ap-northeast-1.amazonaws.com/jal/menu_14.png') AS IMG_URL 
+			
+		FROM 
+			TB_CODE A 
+		LEFT OUTER JOIN TB_MEDIA B ON 1 = 1 
+			AND B.MEDIA_GB_CODE = A.REL_COL 
+			AND B.MEDIA_GB_NO = A.CODE_NO 
+		WHERE 1 = 1 
+			AND A.REL_COL = 'MENU' 
+			AND A.USE_YN = TRUE 
+		ORDER BY 
+			A.CODE_SEQ 
+    </select>
+    
+    <update id="JAL.USER.LAST.READ.ALARM.UPDATE">
+    	UPDATE 
+    		TB_USER A 
+    	SET 
+    		ANNOUNCE_NO = COALESCE( (
+    			SELECT 
+					  ANNOUNCE_NO 
+				FROM 
+					TB_ANNOUNCE 
+				WHERE 1 = 1 
+					AND USE_YN = TRUE 
+					AND USER_NO IN (0, ${user_no}) 
+				ORDER BY 
+					ANNOUNCE_NO DESC 
+				LIMIT 
+					1 
+    		), 0)
+    	WHERE 1 = 1 
+    		AND A.USER_NO = ${user_no} 
+    	
+    	<!--WITH TMP AS (-->
+    	<!--	SELECT -->
+    	<!--		  USER_NO -->
+    	<!--		, ANNOUNCE_NO -->
+    	<!--	FROM -->
+    	<!--		TB_USER -->
+    	<!--	WHERE 1 = 1 -->
+    	<!--		AND USER_NO = ${user_no} -->
+    	<!--)-->
+    	<!--UPDATE -->
+    	<!--	TB_USER A -->
+    	<!--SET -->
+    	<!--	ANNOUNCE_NO = B.ANNOUNCE_NO -->
+    	<!--FROM -->
+    	<!--	TMP B -->
+    	<!--WHERE 1 = 1 -->
+    	<!--	AND A.USER_NO = B.USER_NO -->
+    	<!--RETURNING -->
+    	<!--	(SELECT ANNOUNCE_NO FROM TMP) AS LAST_READ_ANNOUNCE_NO -->
+    </update>
+    
+    <select id="JAL.ALARM.LIST">
+		SELECT 
+			  A.ANNOUNCE_NO 
+			, A.ANNOUNCE_INFO->>'contents' AS CONTENTS 
+			, A.REG_DT 
+		FROM 
+			TB_ANNOUNCE A 
+		WHERE 1 = 1 
+			AND A.USE_YN = TRUE 
+			AND A.USER_NO IN (0, ${user_no}) 
+		ORDER BY 
+			A.ANNOUNCE_NO DESC 
+		LIMIT ${range} OFFSET (${range} * (${page}-1)) 
+    </select>
+    
+    
+    <select id="JAL.BANK.LIST">
+		SELECT 
+			  A.CODE_NO 
+			, A.CD_ID 
+			, A.CODE_GB AS BANK_CD 
+			, A.CODE_DESC AS BANK_NM 
+		FROM 
+			TB_CODE A 
+		WHERE 1 = 1 
+			AND A.REL_COL = 'BANK_CODE' 
+			AND A.USE_YN = TRUE 
+		ORDER BY 
+			A.CODE_SEQ 
+    </select>
+    
+    
+    
+    
+    
+    
+    
+    
+    
+
+	<select id="XY_00000.SELECT2">
+		/* 유저 정보 가져오기 (이미지) */
+		SELECT
+			  img_no
+			, COALESCE(img_url, 'https://via.placeholder.com/600') as img_url
+			, COALESCE(img_comment, '') as img_comment
+			, COALESCE(latitude, 0) as latitude
+			, COALESCE(longitude, 0) as longitude 
+			, SORT 
+		FROM
+			TB_IMG
+		WHERE
+			1 = 1
+			AND USER_NO = #{user_no}
+			AND USE_YN = TRUE
+		ORDER BY 
+			SORT 
+    </select>
+
+	<update id="XY_00000.UPDATE4">
+		/* 필수 입력 여부 적용 */
+		UPDATE 
+			TB_USER 
+		SET 
+			HAS_IMG = #{has_img} 
+		WHERE 
+			1 = 1 
+			AND A.USER_ID = #{user_id} 
+			AND A.USER_NO = #{user_no} 
+    </update>
+
+	<update id="XY.USER_LANG_CODE.UPDATE">
+		/* 사용자 언어코드 반영 */
+		UPDATE 
+			TB_USER 
+		SET 
+			  LANG_CODE = #{lang_code} 
+			, UP_DT = (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT 
+		WHERE 
+			1 = 1 
+			AND USER_ID = #{user_id} 
+    </update>
+
+	<update id="XY.USER_UP_DT.UPDATE">
+		/* 사용자 UP_DT 반영. 최근 활동 기록용 */
+		UPDATE 
+			TB_USER 
+		SET 
+			UP_DT = (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT 
+		WHERE 
+			1 = 1 
+			AND USER_ID = #{user_id} 
+    </update>
+    
+	<select id="XY_00000.SELECT5">
+		/* 유저 정보 deactive 정보 */
+		SELECT 
+			user_no,  
+			deactive
+		FROM public.tb_user_set
+		WHERE 1 = 1
+		AND USER_NO = #{user_no}
+		LIMIT 1
+    </select>
+    
+    <select id="XY_00000.SELECT_6">
+		/* 나를 좋아요 한 사람의 BELIFES 정보 가져오기 */
+		WITH TMP_MY_BELIFES AS (
+			SELECT 
+				UNNEST( PROFILE_RESULT ) AS PROFILE_RESULT 
+			FROM 
+				TB_PROFILE_SET_USER 
+			WHERE
+				1 = 1
+				AND USER_NO = #{user_no} 
+				AND PS_CODE = 'A_BL'
+			ORDER BY 
+				PROFILE_RESULT
+		)
+		SELECT 
+			B.QA_RESULT AS answer
+		FROM 
+			TMP_MY_BELIFES A 
+		LEFT OUTER JOIN TB_PROFILE_SET B ON 
+			1 = 1 
+			AND A.PROFILE_RESULT = B.SET_NO 
+			AND B.PS_CODE = 'A_BL' 
+			AND B.LANG_CODE = #{lang_code} 
+    </select>
+
+	<select id="XY_00000.SELECT_7">
+		/* 나를 좋아요 한 사람의 relationships 정보 가져오기 */
+		WITH TMP_TARGET_RELATIONSHIPS AS (
+			SELECT 
+				UNNEST( PROFILE_RESULT ) AS PROFILE_RESULT 
+			FROM 
+				TB_PROFILE_SET_USER 
+			WHERE
+				1 = 1
+				AND USER_NO = #{user_no} 
+				AND PS_CODE = 'A_RE'
+			ORDER BY 
+				PROFILE_RESULT
+		)
+		SELECT 
+			B.QA_RESULT AS answer
+		FROM 
+			TMP_TARGET_RELATIONSHIPS A 
+		LEFT OUTER JOIN TB_PROFILE_SET B ON 
+			1 = 1 
+			AND A.PROFILE_RESULT = B.SET_NO 
+			AND B.PS_CODE = 'A_RE' 
+			AND B.LANG_CODE = #{lang_code} 
+    </select>
+
+	<select id="XY_00000.SELECT_8">
+		/* 나를 좋아요 한 사람의 lifestyle 정보 가져오기 */
+		WITH TMP_TARGET_LIFESTYLE AS (
+			SELECT 
+				UNNEST( PROFILE_RESULT ) AS PROFILE_RESULT 
+			FROM 
+				TB_PROFILE_SET_USER 
+			WHERE
+				1 = 1
+				AND USER_NO = #{user_no} 
+				AND PS_CODE = 'A_LI'
+			ORDER BY 
+				PROFILE_RESULT
+		)
+		SELECT 
+			B.QA_RESULT AS answer
+		FROM 
+			TMP_TARGET_LIFESTYLE A 
+		LEFT OUTER JOIN TB_PROFILE_SET B ON 
+			1 = 1 
+			AND A.PROFILE_RESULT = B.SET_NO 
+			AND B.PS_CODE = 'A_LI' 
+			AND B.LANG_CODE = #{lang_code} 
+    </select>
+    
+
+	<update id="XY_00000_1.UPDATE">
+		/* 푸시키 등록 */
+		UPDATE 
+			TB_USER 
+		SET 
+			  PUSH_KEY = #{push_key} 
+			, UP_DT = (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT 
+		WHERE 
+			1 = 1 
+			AND USER_NO = #{user_no} 
+			AND USER_ID = #{user_id} 
+			AND (
+				PUSH_KEY IS NULL OR 
+				PUSH_KEY != #{push_key} 
+			)
+	</update>
+
+	<select id="XY_00003.SELECT_1">
+		/* BODY TYPE 리스트 가져오기 회원가입용 */
+		SELECT 
+			  B."desc" AS TITLE 
+			, A.CODE_ID 
+		FROM 
+			TB_CODE A 
+		LEFT OUTER JOIN TB_LANG B ON B.CODE_ID = A.CODE_ID AND B.LANG_CODE = #{lang_code} 
+		
+		WHERE 
+			1 = 1 
+			AND A.REL_COL = 'BODY_TYPE' 
+			AND A.USE_YN = TRUE 
+			AND A.CODE_ID NOT IN ('BT_DC')
+		ORDER BY A.CODE_NO 
+    </select>
+
+	<select id="XY_00003.SELECT_2">
+		/* POSITION 리스트 가져오기 회원가입용 */
+		SELECT 
+			  B."desc" AS TITLE 
+			, A.CODE_ID 
+		FROM 
+			TB_CODE A 
+		LEFT OUTER JOIN TB_LANG B ON B.CODE_ID = A.CODE_ID AND B.LANG_CODE = #{lang_code} 
+		WHERE 
+			1 = 1 
+			AND A.REL_COL = 'POSITION' 
+			AND A.USE_YN = TRUE 
+			AND A.CODE_ID NOT IN ('PO_DC')
+		ORDER BY A.CODE_NO 
+    </select>
+
+	<select id="XY_00003.SELECT_3">
+		/* TRIBE 리스트 가져오기 회원가입용 */
+		SELECT 
+			  B."desc" AS TITLE 
+			, A.CODE_ID 
+		FROM 
+			TB_CODE A 
+		LEFT OUTER JOIN TB_LANG B ON B.CODE_ID = A.CODE_ID AND B.LANG_CODE = #{lang_code} 
+		WHERE 
+			1 = 1 
+			AND A.REL_COL = 'TRIBE' 
+			AND A.USE_YN = TRUE 
+			AND A.CODE_ID NOT IN ('TR_DC')
+		ORDER BY A.CODE_NO 
+    </select>
+
+	<update id="XY_00003.UPDATE0">
+		/* 프로파일 등록 (birth_dt) */
+		UPDATE 
+			TB_USER 
+		SET 
+			  BIRTH_DT = ${birth_dt} 
+			, UP_DT = (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT 
+		WHERE 1 = 1 
+			AND USER_NO = #{user_no} 
+			AND USER_ID = #{user_id} 
+	</update>
+
+	<update id="XY_00003.UPDATE1">
+		/* 프로파일 등록 (gps) */
+		UPDATE 
+			TB_USER 
+		SET 
+			  LATITUDE = #{latitude} 
+			, LONGITUDE = #{longitude} 
+			, UP_DT = (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT 
+		WHERE 1 = 1 
+			AND USER_NO = #{user_no} 
+			AND USER_ID = #{user_id} 
+	</update>
+
+	<update id="XY_00003.UPDATE2">
+		/* 프로파일 등록 (키) */
+		UPDATE 
+			TB_USER 
+		SET 
+			  HEIGHT = ${height} 
+			, UP_DT = (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT 
+		WHERE 1 = 1 
+			AND USER_NO = #{user_no} 
+			AND USER_ID = #{user_id} 
+	</update>
+
+	<update id="XY_00003.UPDATE3">
+		/* 프로파일 등록 (체형) */
+		UPDATE 
+			TB_USER 
+		SET 
+			  BODYTYPE = #{bodytype}
+			, UP_DT = (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT 
+		WHERE 1 = 1 
+			AND USER_NO = #{user_no} 
+			AND USER_ID = #{user_id} 
+	</update>
+
+	<update id="XY_00003.UPDATE4">
+		/* 프로파일 등록 (position) */
+		UPDATE 
+			TB_USER 
+		SET 
+			  "position" = #{position}
+			, UP_DT = (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT 
+		WHERE 1 = 1 
+			AND USER_NO = #{user_no} 
+			AND USER_ID = #{user_id} 
+	</update>
+
+	<update id="XY_00003.UPDATE5">
+		/* 프로파일 등록 (tribe) */
+		UPDATE 
+			TB_USER 
+		SET 
+			  TRIBE = #{tribe}
+			, UP_DT = (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT 
+		WHERE 1 = 1 
+			AND USER_NO = #{user_no} 
+			AND USER_ID = #{user_id} 
+	</update>
+
+	<update id="XY_00003.UPDATE6">
+		/* 프로파일 등록 (job) */
+		UPDATE 
+			TB_USER 
+		SET 
+			  JOB = #{job}
+			, UP_DT = (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT 
+		WHERE 1 = 1 
+			AND USER_NO = #{user_no} 
+			AND USER_ID = #{user_id} 
+	</update>
+
+	<update id="XY_00003.UPDATE7">
+		/* 프로파일 등록 (school) */
+		UPDATE 
+			TB_USER 
+		SET 
+			  SCHOOL = #{school}
+			, UP_DT = (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT 
+		WHERE 1 = 1 
+			AND USER_NO = #{user_no} 
+			AND USER_ID = #{user_id} 
+	</update>
+
+	<insert id="XY_00003.INSERT">
+		/* 프로파일 사진 등록 */
+		WITH TMP_UPDATE AS (
+			UPDATE 
+				TB_USER 
+			SET 
+				  HAS_IMG = TRUE 
+				, UP_DT = (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT 
+				, BLOCK_STS = (CASE WHEN BLOCK_STS = 90011 THEN 90012 ELSE BLOCK_STS END) 
+			WHERE 
+				1 = 1 
+				AND USER_ID = #{user_id} 
+				AND USER_NO = #{user_no} 
+			RETURNING 
+				USER_NO 
+		)
+		INSERT INTO TB_IMG 
+		(
+			IMG_URL, 
+			USER_NO 
+		)
+		SELECT  
+			  #{img_url} 
+			, USER_NO 
+		FROM 
+			TMP_UPDATE 
+	</insert>
+
+	<update id="XY_00003.UPDATE8">
+		/* 프로파일 사진 수정 */
+		WITH TMP_UPDATE AS (
+			UPDATE 
+				TB_USER 
+			SET 
+				  HAS_IMG = TRUE 
+				, UP_DT = (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT 
+				, BLOCK_STS = (CASE WHEN BLOCK_STS = 90011 THEN 90012 ELSE BLOCK_STS END) 
+			WHERE 
+				1 = 1 
+				AND USER_ID = #{user_id} 
+				AND USER_NO = #{user_no} 
+			RETURNING 
+				USER_NO 
+		)
+		UPDATE 
+			TB_IMG A 
+		SET 
+			IMG_URL = #{img_url} 
+		FROM 
+			TMP_UPDATE B 
+		WHERE 
+			1 = 1 
+			AND A.IMG_NO = #{img_no}
+			AND A.USER_NO = B.USER_NO 
+	</update>
+
+	<update id="XY_00003.UPDATE9">
+		/* 프로파일 사진 삭제 */
+		UPDATE 
+			TB_IMG 
+		SET 
+			USE_YN = FALSE 
+		WHERE 
+			1 = 1 
+			AND IMG_NO = #{img_no} 
+			AND USER_NO = #{user_no} 
+	</update>
+
+	<update id="XY_00003.UPDATE10">
+		/* 프로파일 사진 수정 */
+		WITH TMP_UPDATE AS (
+			UPDATE 
+				TB_USER 
+			SET 
+				  HAS_IMG = TRUE 
+				, UP_DT = (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT 
+				, BLOCK_STS = (CASE WHEN BLOCK_STS = 90011 THEN 90012 ELSE BLOCK_STS END) 
+			WHERE 
+				1 = 1 
+				AND USER_ID = #{user_id} 
+				AND USER_NO = #{user_no} 
+			RETURNING 
+				USER_NO 
+		)
+		UPDATE 
+			TB_IMG A 
+		SET 
+			  IMG_COMMENT = ${img_comment} 
+			, LATITUDE = #{latitude} 
+			, LONGITUDE = #{longitude} 
+		FROM 
+			TMP_UPDATE B 
+		WHERE 
+			1 = 1 
+			AND A.IMG_NO = #{img_no}
+			AND A.USER_NO = B.USER_NO 
+	</update>
+
+	<update id="XY_00003.UPDATE_1">
+		/* 프로파일 사진 등록 */
+		WITH TMP_USER AS (
+			UPDATE 
+				TB_USER 
+			SET 
+				  HAS_IMG = TRUE 
+				, UP_DT = (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT 
+				, BLOCK_STS = (CASE WHEN BLOCK_STS = 90011 THEN 90012 ELSE BLOCK_STS END) 
+			WHERE 
+				1 = 1 
+				AND USER_ID = #{user_id} 
+				AND USER_NO = ${user_no} 
+				AND USER_STATUS = 0 
+			RETURNING 
+				USER_NO 
+		)
+		UPDATE 
+			TB_IMG 
+		SET 
+			USE_YN = FALSE
+		WHERE 
+			1 = 1 
+			AND USER_NO = (SELECT USER_NO FROM TMP_USER) 
+	</update>
+
+	<insert id="XY_00003.INSERT_1">
+		/* 프로파일 사진 등록 */
+		WITH TMP_USER AS ( 
+			UPDATE 
+				TB_USER 
+			SET 
+				  UP_DT = (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT 
+				, BLOCK_STS = (CASE WHEN BLOCK_STS = 90011 THEN 90012 ELSE BLOCK_STS END) 
+			WHERE 
+				1 = 1 
+				AND USER_ID = #{user_id} 
+				AND USER_NO = ${user_no} 
+				AND USER_STATUS = 0 
+			RETURNING 
+				USER_NO 
+
+		),  TMP_UPDATE AS (
+			UPDATE 
+				TB_IMG 
+			SET 
+				  IMG_URL = #{img_url} 
+				, IMG_COMMENT = '${img_comment}' 
+				, LATITUDE = #{latitude} 
+				, LONGITUDE = #{longitude} 
+				, SORT = ${sort} 
+				, USE_YN = TRUE
+			WHERE 
+				1 = 1 
+				AND IMG_NO = ${img_no} 
+				AND USER_NO = (SELECT USER_NO FROM TMP_USER) 
+			RETURNING 
+				IMG_NO 
+		)
+		INSERT INTO TB_IMG (
+			IMG_URL, 
+			USER_NO, 
+			IMG_COMMENT, 
+			LATITUDE, 
+			LONGITUDE, 
+			SORT 
+		) 
+		SELECT 
+			  #{img_url} 
+			, USER_NO 
+			, '${img_comment}'
+			, #{latitude} 
+			, #{longitude} 
+			, ${sort} 
+		FROM 
+			TMP_USER 
+		WHERE 
+			NOT EXISTS (
+				SELECT * FROM TMP_UPDATE 
+			)
+	</insert>
+
+	<select id="XY_00003.SELECT_12">
+		/* School 리스트 가져오기 회원가입용 */
+		SELECT 
+			  B."desc" AS TITLE 
+			, A.CODE_ID 
+		FROM 
+			TB_CODE A 
+		LEFT OUTER JOIN TB_LANG B ON B.CODE_ID = A.CODE_ID AND B.LANG_CODE = #{lang_code} 
+		WHERE 
+			1 = 1 
+			AND A.REL_COL = 'EDUCATION_LEVEL' 
+			AND A.USE_YN = TRUE 
+		ORDER BY A.CODE_NO 
+    </select>
+
+	<update id="XY_00003.UPDATE_13">
+		/* 회원 닉네임 설정 */
+		UPDATE 
+			TB_USER A 
+		SET 
+			  USER_NM =  #{user_name} 
+			, LOCALE_DEFAULT = #{locale_default} 
+			, OS = #{os} 
+			, COUNTRY_CODE = (CASE 
+				WHEN #{locale_default} = 'invalid' THEN (SELECT TMP.COUNTRY_CODE FROM TB_MULTILINGUAL TMP WHERE TMP.LANG_CODE = A.LANG_CODE) 
+				ELSE SUBSTRING(#{locale_default}, LENGTH(#{locale_default})-1, 2)
+			END) 
+			, UP_DT = (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT 
+		WHERE 
+			1 = 1 
+			AND A.USER_ID = #{user_id} 
+			AND A.USER_STATUS = 0 
+    </update>
+
+	<select id="XY_00004_0.SELECT">
+		/* PROFILE_RESULT 등록여부 체크 */
+		SELECT 
+			(CASE WHEN COUNT(1) = 3 THEN true ELSE false END) is_values
+		FROM 
+			TB_PROFILE_SET_USER
+		WHERE
+			USER_NO = #{user_no}
+			AND PS_CODE IN (
+				'A_BL', 'A_RE', 'A_LI'
+			)
+    </select>
+
+	<update id="XY_00004_0.UPDATE">
+		/* PROFILE_RESULT 등록 (전체) */
+		WITH TMP AS (
+			SELECT 
+				UNNEST( PROFILE_RESULT ) AS PROFILE_RESULT 
+			FROM 
+				TB_PROFILE_SET_USER
+			WHERE
+				USER_NO = #{user_no}
+			ORDER BY 
+				PROFILE_RESULT
+		)
+		UPDATE
+			TB_USER
+		SET
+			  PROFILE_RESULT = (
+				SELECT 
+					ARRAY_TO_JSON( ARRAY_AGG(PROFILE_RESULT ) ) 
+				FROM 
+					TMP
+			)
+			, UP_DT = (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT 
+		WHERE
+			USER_NO = #{user_no}
+			AND USER_ID = #{user_id}
+    </update>
+
+	<select id="XY_00004_1.SELECT">
+		/* BELIEFS 문제 및 답변 리스트 */
+		SELECT 
+			  A.SET_NO AS set_no_q
+			, A.QA_DESC AS desc_q 
+			, B.SET_NO AS set_no_a 
+			, B.QA_DESC AS desc_a 
+		FROM 
+			TB_PROFILE_SET A 
+		LEFT OUTER JOIN TB_PROFILE_SET B ON 
+			1 = 1 
+			AND B.PS_CODE = 'A_BL' 
+			AND A.SET_NO = B.QUEST_SET_NO 
+			AND B.LANG_CODE = #{lang_code} 
+		WHERE 
+			1 = 1 
+			AND A.PS_CODE = 'Q_BL' 
+			AND A.LANG_CODE = #{lang_code} 
+		ORDER BY 
+			  A.SET_NO 
+			, B.SET_NO 
+    </select>
+
+	<update id="XY_00004_1.UPDATE">
+		/* BELIEFS 결과 등록 */
+		WITH TMP AS (
+			UPDATE
+				TB_PROFILE_SET_USER
+			SET
+				PROFILE_RESULT = ARRAY[${profile_result}]
+			WHERE
+				USER_NO = #{user_no}
+				AND PS_CODE = 'A_BL'
+			RETURNING *
+		)
+		INSERT INTO TB_PROFILE_SET_USER
+			(USER_NO, PS_CODE, PROFILE_RESULT)
+		SELECT 
+			#{user_no}, 'A_BL', ARRAY[${profile_result}]
+		WHERE 
+			NOT EXISTS (SELECT * FROM TMP)
+    </update>
+
+	<select id="XY_00004_2.SELECT">
+		/* RELATIONSHIPS 문제 및 답변 리스트 */
+		SELECT 
+			  A.SET_NO AS set_no_q
+			, A.QA_DESC AS desc_q 
+			, B.SET_NO AS set_no_a 
+			, B.QA_DESC AS desc_a 
+		FROM 
+			TB_PROFILE_SET A 
+		LEFT OUTER JOIN TB_PROFILE_SET B ON 
+			1 = 1 
+			AND B.PS_CODE = 'A_RE' 
+			AND A.SET_NO = B.QUEST_SET_NO 
+			AND B.LANG_CODE = #{lang_code} 
+		WHERE 
+			1 = 1 
+			AND A.PS_CODE = 'Q_RE' 
+			AND A.LANG_CODE = #{lang_code} 
+		ORDER BY 
+			  A.SET_NO 
+			, B.SET_NO 
+    </select>
+
+	<update id="XY_00004_2.UPDATE">
+		/* RELATIONSHIPS 결과 등록 */
+		WITH TMP AS (
+			UPDATE
+				TB_PROFILE_SET_USER
+			SET
+				PROFILE_RESULT = ARRAY[${profile_result}]
+			WHERE
+				USER_NO = #{user_no}
+				AND PS_CODE = 'A_RE'
+			RETURNING *
+		)
+		INSERT INTO TB_PROFILE_SET_USER
+			(USER_NO, PS_CODE, PROFILE_RESULT)
+		SELECT 
+			#{user_no}, 'A_RE', ARRAY[${profile_result}]
+		WHERE 
+			NOT EXISTS (SELECT * FROM TMP)
+    </update>
+
+	<select id="XY_00004_3.SELECT">
+		/* LIFESTYLE 문제 및 답변 리스트 */
+		SELECT 
+			  A.SET_NO AS set_no_q
+			, A.QA_DESC AS desc_q 
+			, B.SET_NO AS set_no_a 
+			, B.QA_DESC AS desc_a 
+		FROM 
+			TB_PROFILE_SET A 
+		LEFT OUTER JOIN TB_PROFILE_SET B ON 
+			1 = 1 
+			AND B.PS_CODE = 'A_LI' 
+			AND A.SET_NO = B.QUEST_SET_NO 
+			AND B.LANG_CODE = #{lang_code} 
+		WHERE 
+			1 = 1 
+			AND A.PS_CODE = 'Q_LI' 
+			AND A.LANG_CODE = #{lang_code} 
+		ORDER BY 
+			  A.SET_NO 
+			, B.SET_NO 
+    </select>
+
+	<update id="XY_00004_3.UPDATE">
+		/* LIFESTYLE 결과 등록 */
+		WITH TMP AS (
+			UPDATE
+				TB_PROFILE_SET_USER
+			SET
+				PROFILE_RESULT = ARRAY[${profile_result}]
+			WHERE
+				USER_NO = #{user_no}
+				AND PS_CODE = 'A_LI'
+			RETURNING *
+		)
+		INSERT INTO TB_PROFILE_SET_USER
+			(USER_NO, PS_CODE, PROFILE_RESULT)
+		SELECT 
+			#{user_no}, 'A_LI', ARRAY[${profile_result}]
+		WHERE 
+			NOT EXISTS (SELECT * FROM TMP)
+    </update>
+    
+    <select id="XY_00005_0.SELECT1">
+		/* Preferences 리스트 가져오기 */
+        SELECT 
+            age_std,
+            age_end,
+            NULL AS ethnicity, 
+            NULL AS drink,
+            NULL AS smoking,
+            height_std,
+            height_end,
+            (SELECT "desc" FROM tb_lang WHERE 1 = 1 AND lang_code = #{lang_code} AND code_id = bodytype_key  ) AS bodytype,
+            (SELECT "desc" FROM tb_lang WHERE 1 = 1 AND lang_code = #{lang_code} AND code_id = position_key  ) AS "position",
+            (SELECT "desc" FROM tb_lang WHERE 1 = 1 AND lang_code = #{lang_code} AND code_id = tribe_key  ) AS tribe,
+            position_key,
+            bodytype_key,
+            tribe_key,
+            acc_value_std,
+            acc_value_end,
+            dist_std,
+            dist_end
+        FROM 
+            TB_USER_PREFER 
+        WHERE 1 = 1
+        AND USER_NO = #{user_no} 
+    </select>
+
+	<select id="XY_USER_PAY_INFO.SELECT">
+		/* 유저 구독 여부 가져오기 */
+		SELECT 
+			user_pay_no,
+			EXP_DT,
+			pay_info
+		FROM 
+			TB_USER_PAY
+		WHERE
+			1 = 1
+			AND USER_NO = #{user_no}
+			AND PAY_KEY = 'PAY_KEY'
+			<![CDATA[ AND EXP_DT >= (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT  ]]>
+		ORDER BY 
+			USER_PAY_NO DESC 
+		LIMIT 1
+    </select>
+	
+	
+	<select id="XY_00005_2.SELECT">
+		/* PREFERENCE TYPE 별 데이터 가져오기 */
+		SELECT
+			A.CODE_ID
+			, A.CODE_GB 
+			, B.DESC
+		FROM TB_CODE A
+		LEFT OUTER JOIN  TB_LANG B ON  A.CODE_ID = B.CODE_ID  AND B.LANG_CODE = #{lang_code}
+		WHERE 1 = 1	
+		AND A.CODE_GB = #{code_gb}
+		ORDER BY A.CODE_NO ASC
+		LIMIT 100
+    </select>
+
+	<update id="XY_00005_2.UPDATE">
+		/* PREFERENCE TYPE 별 데이터 업데이트 */
+	    INSERT INTO  PUBLIC.TB_USER_PREFER 
+	    (
+	        USER_NO
+	        , UP_DT
+	        , REG_DT
+	        <if test="age_std != null">
+	        , age_std
+	        </if>
+	        <if test="age_end != null">
+	        , age_end
+	        </if>
+            <if test="height_std != null">
+	        , height_std
+	        </if>
+	        <if test="height_end != null">
+	        , height_end
+	        </if>
+            <if test="acc_value_std != null">
+	        , acc_value_std
+	        </if>
+	        <if test="acc_value_end != null">
+	        , acc_value_end
+	        </if>
+            <if test="dist_std != null">
+	        , dist_std
+	        </if>
+	        <if test="dist_end != null">
+	        , dist_end
+	        </if>
+	        <if test="bodytype_key != null">
+	        , bodytype_key
+	        </if>
+	        <if test="position_key != null">
+	        , position_key
+	        </if>
+   	        <if test="tribe_key != null">
+	        , tribe_key
+	        </if>
+	    )
+	    VALUES
+	    (
+	        ${user_no}
+	        , FLOOR(DATE_PART('EPOCH' :: TEXT, NOW())) :: BIGINT
+	        , FLOOR(DATE_PART('EPOCH' :: TEXT, NOW())) :: BIGINT
+	        <if test="age_std != null">
+	        , #{age_std}
+	        </if>
+	        <if test="age_end != null">
+	        , #{age_end}
+	        </if>
+	        <if test="height_std != null">
+	        , #{height_std}
+	        </if>
+	        <if test="height_end != null">
+	        , #{height_end}
+	        </if>
+	        <if test="acc_value_std != null">
+	        , #{acc_value_std}
+	        </if>
+	        <if test="acc_value_end != null">
+	        , #{acc_value_end}
+	        </if>
+	        <if test="dist_std != null">
+	        , #{dist_std}
+	        </if>
+	        <if test="dist_end != null">
+	        , #{dist_end}
+	        </if>
+            <if test="bodytype_key != null">
+	        , #{bodytype_key}
+	        </if>
+            <if test="position_key != null">
+	        , #{position_key}
+	        </if>
+	        <if test="tribe_key != null">
+	        , #{tribe_key}
+	        </if>
+	    )
+	    ON CONFLICT (USER_NO)
+	    DO UPDATE 
+	    SET 
+	        UP_DT = FLOOR(DATE_PART('EPOCH' :: TEXT, NOW())) :: BIGINT
+	        <if test="age_std != null">
+	        , age_std = #{age_std}
+	        </if>
+	        <if test="age_end != null">
+	        , age_end = #{age_end}
+	        </if>
+	        <if test="height_std != null">
+	        , height_std = #{height_std}
+	        </if>
+	        <if test="height_end != null">
+	        , height_end = #{height_end}
+	        </if>
+	        <if test="acc_value_std != null">
+	        , acc_value_std = #{acc_value_std}
+	        </if>
+	        <if test="acc_value_end != null">
+	        , acc_value_end = #{acc_value_end}
+	        </if>
+	        <if test="dist_std != null">
+	        , dist_std = #{dist_std}
+	        </if>
+	        <if test="dist_end != null">
+	        , dist_end = #{dist_end}
+	        </if>
+	        <if test="bodytype_key != null">
+	        , bodytype_key = #{bodytype_key}
+	        </if>
+            <if test="position_key != null">
+	        , position_key = #{position_key}
+	        </if>
+	        <if test="tribe_key != null">
+	        , tribe_key = #{tribe_key}
+	        </if>
+	    WHERE PUBLIC.TB_USER_PREFER.USER_NO =  ${user_no}
+	    RETURNING *;
+	</update>
+	
+	<select id="XY_00005_4.SELECT">
+		/* BODY TYPE 리스트 가져오기 */
+		SELECT 
+			  B.DESC AS CODE_DESC 
+			, A.CODE_ID 
+		FROM 
+			TB_CODE A 
+		LEFT OUTER JOIN TB_LANG B ON B.CODE_ID = A.CODE_ID AND B.LANG_CODE = #{lang_code} 
+		
+		WHERE 
+			1 = 1 
+			AND A.REL_COL = 'BODY_TYPE' 
+			AND A.USE_YN = TRUE 
+		ORDER BY A.CODE_NO 
+    </select>
+
+	<select id="XY_00005_5.SELECT">
+		/* POSITION 리스트 가져오기 */
+		SELECT 
+			  B.DESC AS CODE_DESC 
+			, A.CODE_ID 
+		FROM 
+			TB_CODE A 
+		LEFT OUTER JOIN TB_LANG B ON B.CODE_ID = A.CODE_ID AND B.LANG_CODE = #{lang_code} 
+		WHERE 
+			1 = 1 
+			AND A.REL_COL = 'POSITION' 
+			AND A.USE_YN = TRUE 
+		ORDER BY A.CODE_NO 
+    </select>
+
+	<select id="XY_00005_6.SELECT">
+		/* TRIBE 리스트 가져오기 */
+		SELECT 
+			  B.DESC AS CODE_DESC  
+			, A.CODE_ID 
+		FROM 
+			TB_CODE A 
+		LEFT OUTER JOIN TB_LANG B ON B.CODE_ID = A.CODE_ID AND B.LANG_CODE = #{lang_code} 
+		WHERE 
+			1 = 1 
+			AND A.REL_COL = 'TRIBE' 
+			AND A.USE_YN = TRUE 
+		ORDER BY A.CODE_NO 
+    </select>
+    
+    <update id="XY_00005_7.UPDATE">
+		/* Preferences BODY TYPE 적용 */
+		UPDATE 
+			TB_USER_PREFER 
+		SET 
+			BODYTYPE_KEY = #{bodytype_key} 
+		WHERE 
+			1 = 1 
+			AND USER_NO = (SELECT USER_NO FROM TB_USER WHERE USER_ID = #{user_id} AND USER_NO = #{user_no} AND USER_STATUS = 0) 
+    </update>
+
+	<update id="XY_00005_8.UPDATE">
+		/* Preferences POSITION_KEY 적용 */
+		UPDATE 
+			TB_USER_PREFER 
+		SET 
+			POSITION_KEY = #{position_key} 
+		WHERE 
+			1 = 1 
+			AND USER_NO = (SELECT USER_NO FROM TB_USER WHERE USER_ID = #{user_id} AND USER_NO = #{user_no} AND USER_STATUS = 0) 
+    </update>
+
+	<update id="XY_00005_9.UPDATE">
+		/* Preferences TRIBE_KEY 적용 */
+		UPDATE 
+			TB_USER_PREFER 
+		SET 
+			TRIBE_KEY = #{tribe_key} 
+		WHERE 
+			1 = 1 
+			AND USER_NO = (SELECT USER_NO FROM TB_USER WHERE USER_ID = #{user_id} AND USER_NO = #{user_no} AND USER_STATUS = 0) 
+    </update>
+
+	<update id="XY_00005_10.UPDATE">
+		/* Preferences AGE RANGE 적용 */
+		UPDATE 
+			TB_USER_PREFER 
+		SET 
+			  AGE_STD = #{age_std} 
+			, AGE_END = (CASE WHEN #{age_end} >= 65 THEN 150 ELSE #{age_end} END) 
+		WHERE 
+			1 = 1 
+			AND USER_NO = (SELECT USER_NO FROM TB_USER WHERE USER_ID = #{user_id} AND USER_NO = #{user_no} AND USER_STATUS = 0) 
+    </update>
+
+	<update id="XY_00005_11.UPDATE">
+		/* Preferences HEIGHT RANGE 적용 */
+		UPDATE 
+			TB_USER_PREFER 
+		SET 
+			  HEIGHT_STD = #{height_std} 
+			, HEIGHT_END = (CASE WHEN #{height_end} >= 274 THEN 500 ELSE #{height_end} END) 
+		WHERE 
+			1 = 1 
+			AND USER_NO = (SELECT USER_NO FROM TB_USER WHERE USER_ID = #{user_id} AND USER_NO = #{user_no} AND USER_STATUS = 0) 
+    </update>
+
+	<update id="XY_00005_12.UPDATE">
+		/* Preferences VALUE RANGE 적용 */
+		UPDATE 
+			TB_USER_PREFER 
+		SET 
+			  ACC_VALUE_STD = #{acc_value_std} 
+			, ACC_VALUE_END = #{acc_value_end} 
+		WHERE 
+			1 = 1 
+			AND USER_NO = (SELECT USER_NO FROM TB_USER WHERE USER_ID = #{user_id} AND USER_NO = #{user_no} AND USER_STATUS = 0) 
+    </update>
+
+	<update id="XY_00005_13.UPDATE">
+		/* Preferences DISTANCE RANGE 적용 */
+		UPDATE 
+			TB_USER_PREFER 
+		SET 
+			  DIST_STD = #{dist_std} 
+			, DIST_END = (CASE WHEN #{dist_end} >= 100 THEN 20000000 ELSE #{dist_end} END)
+		WHERE 
+			1 = 1 
+			AND USER_NO = (SELECT USER_NO FROM TB_USER WHERE USER_ID = #{user_id} AND USER_NO = #{user_no} AND USER_STATUS = 0) 
+    </update>
+
+	<select id="XY_00006_0.SELECT1">
+		/* Setting 리스트 가져오기 */
+		SELECT 
+			  A.USER_NO  
+			, A.BLOCK_STS 
+			, A.COUNTRY_CODE 
+			, B.NEW_MATCH 
+			, B.NEW_MSG  
+			, B."like" 
+			, B.EVENT 
+			, B.PRIME_YN 
+			, B.SIGNAL_MSG 
+			, B.SECRET_MODE 
+			, B.DEACTIVE 
+			, B.FACEBOOK 
+			, B.FACEBOOK_INFO 
+			, B.INSTAGRAM 
+			, B.INSTAGRAM_INFO 
+		FROM 
+			  TB_USER A 
+			, TB_USER_SET B 
+		WHERE 
+			1 = 1 
+			AND A.USER_NO = #{user_no} 
+    </select>
+
+
+	<update id="XY_00006_1.UPDATE">
+		/* Setting NEW_MATCH 반영하기 */
+		UPDATE 
+			TB_USER_SET
+		SET 
+			NEW_MATCH = #{new_match}
+		WHERE
+			1 = 1
+			AND USER_NO = (SELECT USER_NO FROM TB_USER WHERE USER_NO = #{user_no} AND USER_ID = #{user_id})
+    </update>
+
+	<update id="XY_00006_2.UPDATE">
+		/* Setting NEW_MSG 반영하기 */
+		UPDATE 
+			TB_USER_SET
+		SET 
+			NEW_MSG = #{new_msg}
+		WHERE
+			1 = 1
+			AND USER_NO = (SELECT USER_NO FROM TB_USER WHERE USER_NO = #{user_no} AND USER_ID = #{user_id})
+    </update>
+
+	<update id="XY_00006_3.UPDATE">
+		/* Setting LIKE 반영하기 */
+		UPDATE 
+			TB_USER_SET
+		SET 
+			"like" = #{like}
+		WHERE
+			1 = 1
+			AND USER_NO = (SELECT USER_NO FROM TB_USER WHERE USER_NO = #{user_no} AND USER_ID = #{user_id})
+    </update>
+
+	<update id="XY_00006_4.UPDATE">
+		/* Setting EVENT 반영하기 */
+		UPDATE 
+			TB_USER_SET
+		SET 
+			EVENT = #{event}
+		WHERE
+			1 = 1
+			AND USER_NO = (SELECT USER_NO FROM TB_USER WHERE USER_NO = #{user_no} AND USER_ID = #{user_id})
+    </update>
+
+	<update id="XY_00006_5.UPDATE">
+		/* Setting SIGNAL_MSG 반영하기 */
+		UPDATE 
+			TB_USER_SET
+		SET 
+			SIGNAL_MSG = #{signal_msg}
+		WHERE
+			1 = 1
+			AND USER_NO = (SELECT USER_NO FROM TB_USER WHERE USER_NO = #{user_no} AND USER_ID = #{user_id})
+    </update>
+
+	<update id="XY_00006_6.UPDATE">
+		/* Setting SECRET_MODE 반영하기 */
+		UPDATE 
+			TB_USER_SET
+		SET 
+			SECRET_MODE = #{secret_mode}
+		WHERE
+			1 = 1
+			AND USER_NO = (SELECT USER_NO FROM TB_USER WHERE USER_NO = #{user_no} AND USER_ID = #{user_id})
+    </update>
+
+	<update id="XY_00006_7.UPDATE">
+		/* Setting DEACTIVE 반영하기 */
+		UPDATE 
+			TB_USER_SET
+		SET 
+			DEACTIVE = #{deactive}
+		WHERE
+			1 = 1
+			AND USER_NO = (SELECT USER_NO FROM TB_USER WHERE USER_NO = #{user_no} AND USER_ID = #{user_id})
+    </update>
+
+	<update id="XY_00006_8.UPDATE">
+		/* Setting FACEBOOK 반영하기 */
+		UPDATE 
+			TB_USER_SET
+		SET 
+			FACEBOOK = #{facebook}
+		WHERE
+			1 = 1
+			AND USER_NO = (SELECT USER_NO FROM TB_USER WHERE USER_NO = #{user_no} AND USER_ID = #{user_id})
+    </update>
+
+	<update id="XY_00006_9.UPDATE">
+		/* Setting INSTAGRAM 반영하기 */
+		UPDATE 
+			TB_USER_SET
+		SET 
+			INSTAGRAM = #{instagram}
+		WHERE
+			1 = 1
+			AND USER_NO = (SELECT USER_NO FROM TB_USER WHERE USER_NO = #{user_no} AND USER_ID = #{user_id})
+    </update>
+
+
+	<select id="XY_NEW_DATA_CHECK.LIKE_COUNT.SELECT">
+		/* 나를 좋아요 한 건수 가져오기 100개 만 가져오고 99+ 로 표현한다.*/
+		SELECT 
+			LIKE_NO 
+		FROM 
+			TB_LIKE 
+		WHERE 1 = 1 
+			AND LIKE_USER_NO = #{user_no} 
+			AND LIKE_STATUS = 0 
+		LIMIT 
+			100 
+    </select>
+
+	<select id="XY_NEW_DATA_CHECK.UNREAD_CHAT.SELECT">
+		/* 내가 읽지않은 채팅방이 있는지 체크한다. */
+		WITH TMP AS ( 
+			SELECT 
+				  ROOM_KEY 
+				, READ_CHAT_SEQ_NO 
+			FROM 
+				TB_CHATTING_ROOM 
+			WHERE 1 = 1 
+				AND USER_NO = #{user_no} 
+				AND STS = 0 
+		) 
+		SELECT 
+			1 
+		FROM 
+			  TB_CHATTING A 
+			, TMP B 
+		WHERE 1 = 1 
+			AND A.ROOM_KEY = B.ROOM_KEY 
+			AND A.CHAT_USER_NO != #{user_no} 
+			<![CDATA[    AND A.CHAT_SEQ_NO > B.READ_CHAT_SEQ_NO  ]]> 
+		LIMIT 1
+    </select>
+
+
+
+	<!-- TODO 이거 성능 체크해야 됨. tb_like 가 메인이 되는게 나을수도... -->
+	<select id="XY_00100_0.SELECT1">
+		/* 좋아요 리스트 가져오기 */
+		SELECT 
+			B.like_no,
+			C.user_no,
+			COALESCE(C.user_nm, '') as user_nm,
+			EXTRACT(YEAR FROM AGE( TO_TIMESTAMP(C.BIRTH_DT) )) AS age, 
+			(
+				CASE WHEN #{is_paid} = TRUE THEN COALESCE( (SELECT TMP.IMG_URL FROM TB_IMG TMP WHERE TMP.USER_NO = B.REG_USER_NO AND TMP.USE_YN = TRUE ORDER BY TMP.SORT LIMIT 1), 'https://via.placeholder.com/600') 
+					ELSE COALESCE( (SELECT TMP.IMG_URL FROM TB_IMG TMP WHERE TMP.USER_NO = B.REG_USER_NO AND TMP.USE_YN = TRUE ORDER BY TMP.SORT LIMIT 1), 'https://via.placeholder.com/600') 
+				END
+			) AS like_user_img,
+			(CASE WHEN B.COMMENT IS NULL THEN FALSE ELSE TRUE END) is_signal,
+			B.comment 
+		FROM 
+			TB_USER A 
+		LEFT OUTER JOIN TB_LIKE B ON B.LIKE_USER_NO = A.USER_NO AND B.LIKE_STATUS = 0 
+		LEFT OUTER JOIN TB_USER C ON B.REG_USER_NO = C.USER_NO 
+		WHERE
+			1 = 1
+			AND A.USER_NO = #{user_no} 
+			AND B.LIKE_STATUS = 0 
+			AND C.USER_NO NOT IN ( SELECT JSONB_ARRAY_ELEMENTS_TEXT( TMP.LIKE_LIST )::BIGINT FROM TB_LIKE_UNDO TMP WHERE TMP.USER_NO = A.USER_NO  ) 
+			<![CDATA[ AND B.LIKE_NO < #{like_no}  ]]>
+
+
+
+
+			
+			
+
+			<if test="age_std != null">
+				<![CDATA[ AND EXTRACT(YEAR FROM AGE(TO_TIMESTAMP(C.BIRTH_DT)::DATE)) >= #{age_std}  ]]>
+			</if> 
+			<if test="age_end != null">
+				<![CDATA[ AND EXTRACT(YEAR FROM AGE(TO_TIMESTAMP(C.BIRTH_DT)::DATE)) <= #{age_end}    ]]>
+			</if> 
+			<if test="acc_value_std != null">
+				<![CDATA[ AND WORD_SIMILARITY(A.PROFILE_RESULT::VARCHAR, C.PROFILE_RESULT::VARCHAR) >= #{acc_value_std} / 100 :: FLOAT  ]]> 
+			</if> 
+			<if test="acc_value_end != null">
+				<![CDATA[ AND WORD_SIMILARITY(A.PROFILE_RESULT::VARCHAR, C.PROFILE_RESULT::VARCHAR) <= #{acc_value_end} / 100 :: FLOAT   ]]>
+			</if> 
+			<if test="dist_std != null">
+				<![CDATA[ AND EARTH_DISTANCE(LL_TO_EARTH(A.LATITUDE, A.LONGITUDE), LL_TO_EARTH(C.LATITUDE, C.LONGITUDE)) >= #{dist_std} * 1000 :: BIGINT ]]> 
+			</if> 
+			<if test="dist_end != null">
+				<![CDATA[ AND EARTH_DISTANCE(LL_TO_EARTH(A.LATITUDE, A.LONGITUDE), LL_TO_EARTH(C.LATITUDE, C.LONGITUDE)) <= #{dist_end} * 1000 :: BIGINT ]]>
+			</if> 
+			<if test="height_std != null">
+				<![CDATA[ AND C.HEIGHT >= #{height_std}   ]]>
+			</if> 
+			<if test="height_end != null">
+				<![CDATA[ AND C.HEIGHT <= #{height_end}  ]]>
+			</if> 
+			<if test="bodytype_key != null">
+				AND C.BODYTYPE = #{bodytype_key} 
+			</if> 
+			<if test="position_key != null">
+				AND C."position" = #{position_key} 
+			</if> 
+			<if test="tribe_key != null">
+				AND C.TRIBE = #{tribe_key} 
+			</if> 
+
+
+
+
+
+		ORDER BY B.LIKE_NO DESC
+		LIMIT #{limit_row} 
+    </select>
+
+	<select id="XY_00100_0.SELECT2">
+		/* 좋아요 리스트 있는지 여부 체크 */
+		SELECT 
+			1
+		FROM 
+			TB_LIKE 
+		WHERE
+			1 = 1
+			AND LIKE_USER_NO = #{user_no} 
+			AND LIKE_STATUS = 0 
+		LIMIT 1
+    </select>
+
+	<select id="XY_00110_0.SELECT1">
+		/* 나를 좋아요 한 사람의 정보 가져오기 */
+		SELECT 
+			A.reg_user_no,
+			B.user_fanm,
+			COALESCE(B.user_nm, '') AS user_nm,
+			EXTRACT(YEAR FROM AGE( TO_TIMESTAMP(B.BIRTH_DT) )) AS age, 
+			B.latitude,
+			B.longitude,
+			COALESCE(B.job , '') AS job,
+			B.height,
+			(SELECT "desc" FROM TB_LANG WHERE LANG_CODE = #{lang_code} AND CODE_ID = B.SCHOOL) as school, 
+			(SELECT "desc" FROM TB_LANG WHERE LANG_CODE = #{lang_code} AND CODE_ID = B.BODYTYPE) as body_type, 
+			(SELECT "desc" FROM TB_LANG WHERE LANG_CODE = #{lang_code} AND CODE_ID = B.TRIBE) as tribe, 
+			(SELECT "desc" FROM TB_LANG WHERE LANG_CODE = #{lang_code} AND CODE_ID = B."position") as "position", 
+			
+			ROUND( WORD_SIMILARITY(
+				  (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_USER TMP WHERE TMP.USER_NO = A.LIKE_USER_NO)
+				, B.PROFILE_RESULT::VARCHAR
+			) * 100 ) as over_all,
+
+			ROUND( WORD_SIMILARITY(
+				  (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_PROFILE_SET_USER TMP WHERE TMP.USER_NO = A.LIKE_USER_NO AND PS_CODE = 'A_BL')
+				, (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_PROFILE_SET_USER TMP WHERE TMP.USER_NO = A.REG_USER_NO AND PS_CODE = 'A_BL')
+			) * 100 ) as belifes,
+
+			ROUND( WORD_SIMILARITY(
+				  (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_PROFILE_SET_USER TMP WHERE TMP.USER_NO = A.LIKE_USER_NO AND PS_CODE = 'A_RE')
+				, (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_PROFILE_SET_USER TMP WHERE TMP.USER_NO = A.REG_USER_NO AND PS_CODE = 'A_RE')
+			) * 100 ) as relationships,
+
+			ROUND( WORD_SIMILARITY(
+				  (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_PROFILE_SET_USER TMP WHERE TMP.USER_NO = A.LIKE_USER_NO AND PS_CODE = 'A_LI')
+				, (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_PROFILE_SET_USER TMP WHERE TMP.USER_NO = A.REG_USER_NO AND PS_CODE = 'A_LI')
+			) * 100 ) as lifestyle, 
+			
+			(CASE WHEN A.COMMENT IS NULL THEN FALSE ELSE TRUE END) is_signal
+		FROM 
+			TB_LIKE A
+		LEFT OUTER JOIN TB_USER B ON A.REG_USER_NO = B.USER_NO 
+		WHERE
+			1 = 1
+			AND A.LIKE_USER_NO = #{user_no} 
+			AND A.LIKE_STATUS = 0 
+			AND A.LIKE_NO = #{like_no} 
+    </select>
+
+	<select id="XY_00110_0.SELECT2">
+		/* 나를 좋아요 한 사람의 BELIFES 정보 가져오기 */
+		WITH TMP_TARGET_BELIFES AS (
+			SELECT 
+				UNNEST( PROFILE_RESULT ) AS PROFILE_RESULT 
+			FROM 
+				TB_PROFILE_SET_USER 
+			WHERE
+				1 = 1
+				AND USER_NO = #{user_no_target} 
+				AND PS_CODE = 'A_BL'
+			ORDER BY 
+				PROFILE_RESULT
+		), TMP_MY_BELIFES AS (
+			SELECT 
+				UNNEST( PROFILE_RESULT ) AS PROFILE_RESULT 
+			FROM 
+				TB_PROFILE_SET_USER 
+			WHERE
+				1 = 1
+				AND USER_NO = #{user_no} 
+				AND PS_CODE = 'A_BL'
+			ORDER BY 
+				PROFILE_RESULT
+		)
+		SELECT 
+			(CASE WHEN C.PROFILE_RESULT IS NULL THEN FALSE ELSE TRUE END) AS is_same,
+			B.QA_RESULT AS answer
+		FROM 
+			TMP_TARGET_BELIFES A 
+		LEFT OUTER JOIN TB_PROFILE_SET B ON 
+			1 = 1 
+			AND A.PROFILE_RESULT = B.SET_NO 
+			AND B.PS_CODE = 'A_BL' 
+			AND B.LANG_CODE = #{lang_code} 
+		LEFT OUTER JOIN TMP_MY_BELIFES C ON A.PROFILE_RESULT = C.PROFILE_RESULT 
+    </select>
+
+	<select id="XY_00110_0.SELECT3">
+		/* 나를 좋아요 한 사람의 relationships 정보 가져오기 */
+		WITH TMP_TARGET_RELATIONSHIPS AS (
+			SELECT 
+				UNNEST( PROFILE_RESULT ) AS PROFILE_RESULT 
+			FROM 
+				TB_PROFILE_SET_USER 
+			WHERE
+				1 = 1
+				AND USER_NO = #{user_no_target} 
+				AND PS_CODE = 'A_RE'
+			ORDER BY 
+				PROFILE_RESULT
+		), TMP_MY_RELATIONSHIPS AS (
+			SELECT 
+				UNNEST( PROFILE_RESULT ) AS PROFILE_RESULT 
+			FROM 
+				TB_PROFILE_SET_USER 
+			WHERE
+				1 = 1
+				AND USER_NO = #{user_no} 
+				AND PS_CODE = 'A_RE'
+			ORDER BY 
+				PROFILE_RESULT
+		)
+		SELECT 
+			(CASE WHEN C.PROFILE_RESULT IS NULL THEN FALSE ELSE TRUE END) AS is_same,
+			B.QA_RESULT AS answer
+		FROM 
+			TMP_TARGET_RELATIONSHIPS A 
+		LEFT OUTER JOIN TB_PROFILE_SET B ON 
+			1 = 1 
+			AND A.PROFILE_RESULT = B.SET_NO 
+			AND B.PS_CODE = 'A_RE' 
+			AND B.LANG_CODE = #{lang_code} 
+		LEFT OUTER JOIN TMP_MY_RELATIONSHIPS C ON A.PROFILE_RESULT = C.PROFILE_RESULT 
+    </select>
+
+	<select id="XY_00110_0.SELECT4">
+		/* 나를 좋아요 한 사람의 lifestyle 정보 가져오기 */
+		WITH TMP_TARGET_LIFESTYLE AS (
+			SELECT 
+				UNNEST( PROFILE_RESULT ) AS PROFILE_RESULT 
+			FROM 
+				TB_PROFILE_SET_USER 
+			WHERE
+				1 = 1
+				AND USER_NO = #{user_no_target} 
+				AND PS_CODE = 'A_LI'
+			ORDER BY 
+				PROFILE_RESULT
+		), TMP_MY_LIFESTYLE AS (
+			SELECT 
+				UNNEST( PROFILE_RESULT ) AS PROFILE_RESULT 
+			FROM 
+				TB_PROFILE_SET_USER 
+			WHERE
+				1 = 1
+				AND USER_NO = #{user_no} 
+				AND PS_CODE = 'A_LI'
+			ORDER BY 
+				PROFILE_RESULT
+		)
+		SELECT 
+			(CASE WHEN C.PROFILE_RESULT IS NULL THEN FALSE ELSE TRUE END) AS is_same,
+			B.QA_RESULT AS answer
+		FROM 
+			TMP_TARGET_LIFESTYLE A 
+		LEFT OUTER JOIN TB_PROFILE_SET B ON 
+			1 = 1 
+			AND A.PROFILE_RESULT = B.SET_NO 
+			AND B.PS_CODE = 'A_LI' 
+			AND B.LANG_CODE = #{lang_code} 
+		LEFT OUTER JOIN TMP_MY_LIFESTYLE C ON A.PROFILE_RESULT = C.PROFILE_RESULT 
+    </select>
+    
+    <select id="XY_00120.SELECT1">
+		/* 좋아요 한 사람 채팅 수락하기 */
+		WITH TMP AS (
+			UPDATE 
+				TB_LIKE A 
+			SET 
+				LIKE_STATUS = A.LIKE_NO 
+			WHERE 
+				1 = 1 
+				AND A.LIKE_USER_NO = ( SELECT USER_NO FROM TB_USER WHERE USER_NO = #{user_no} AND USER_ID = #{user_id} )
+				AND A.LIKE_STATUS = 0 
+				AND A.LIKE_NO = #{like_no}
+			RETURNING 
+				  A.REG_USER_NO
+				, A.LIKE_USER_NO
+				, (CASE WHEN A.REG_USER_NO > A.LIKE_USER_NO THEN (A.LIKE_USER_NO || '_' || A.REG_USER_NO)::VARCHAR ELSE (A.REG_USER_NO || '_' || A.LIKE_USER_NO)::VARCHAR END) AS ROOM_KEY 
+		)
+		INSERT INTO TB_CHATTING_ROOM 
+		(
+			  USER_NO
+			, ROOM_KEY
+			, TARGET_USER_NO
+			, MAKE_USER_NO
+			, JOIN_USER_NO
+			, MAKE_UUID
+			, JOIN_UUID
+		)
+		SELECT 
+			  B.REG_USER_NO 
+			, B.ROOM_KEY 
+			, B.LIKE_USER_NO 
+			, B.REG_USER_NO 
+			, B.LIKE_USER_NO 
+			, (SELECT TMP.USER_ID FROM TB_USER TMP WHERE TMP.USER_NO = B.REG_USER_NO) 
+			, #{user_id} 
+		FROM 
+			TMP B  
+		UNION ALL 
+		SELECT 
+			  C.LIKE_USER_NO 
+			, C.ROOM_KEY 
+			, C.REG_USER_NO 
+			, C.REG_USER_NO 
+			, C.LIKE_USER_NO 
+			, (SELECT TMP.USER_ID FROM TB_USER TMP WHERE TMP.USER_NO = C.REG_USER_NO) 
+			, #{user_id} 
+		FROM 
+			TMP C 
+		RETURNING
+			room_no, user_no, room_key 
+    </select>
+
+	<select id="XY_00120.SELECT3">
+		/* like_no를 기반한 타켓 회원의 푸쉬 키 정보 조회*/
+		SELECT 
+			  A.PUSH_KEY
+			, A.USER_NO 
+			, B."like" 
+			, A.lang_code 
+		FROM 
+			  TB_USER A 
+			, TB_USER_SET B 
+		WHERE 
+			1 = 1 
+			AND A.USER_NO = B.USER_NO 
+			AND A.USER_NO = (
+				SELECT 
+					reg_user_no 
+				FROM 
+					TB_LIKE 
+				WHERE 
+					1 = 1
+					AND LIKE_USER_NO = #{user_no} 
+					AND LIKE_STATUS = 0 
+					AND LIKE_NO = #{like_no}
+				LIMIT 1
+		)
+		LIMIT 1
+	</select>
+    
+    <insert id="XY_00130.INSERT_1">
+		/* 유저 UNDO 히스토리 담기 */
+		WITH TMP_1 AS (
+			SELECT 
+				JSONB_ARRAY_ELEMENTS_TEXT(LIKE_LIST)::BIGINT AS REG_USER_NO 
+			FROM 
+				TB_LIKE_UNDO 
+			WHERE 
+				1 = 1 
+				AND USER_NO = #{user_no} 
+			
+			UNION ALL 
+			
+			SELECT 
+				REG_USER_NO 
+			FROM 
+				TB_LIKE 
+			WHERE 
+				1 = 1 
+				AND LIKE_USER_NO = #{user_no} 
+				AND LIKE_STATUS = 0 
+				AND LIKE_NO = #{like_no} 
+
+		), TMP_2 AS (
+			SELECT 
+				  #{user_no}::BIGINT AS USER_NO
+				, ARRAY_TO_JSON( ARRAY_AGG(REG_USER_NO) ) AS LIKE_LIST 
+			FROM 
+				TMP_1 
+		), TMP_3 AS (
+			UPDATE 
+				TB_LIKE_UNDO A 
+			SET 
+				  LIKE_LIST = B.LIKE_LIST 
+			FROM 
+				TMP_2 B 
+			WHERE 
+				1 = 1 
+				AND A.USER_NO = B.USER_NO 
+			RETURNING 
+				A.USER_NO 
+		) 
+		INSERT INTO TB_LIKE_UNDO 
+		(USER_NO, LIKE_LIST) 
+		SELECT 
+			USER_NO, LIKE_LIST 
+		FROM 
+			TMP_2 
+		WHERE NOT EXISTS (
+			SELECT * FROM TMP_3
+		)
+    </insert>
+
+	<select id="XY_00140.SELECT_1">
+		/* Undo 유저키 가져오기 */
+		WITH TMP_0 AS (
+			SELECT 
+				  (CASE WHEN JSONB_ARRAY_LENGTH(LIKE_LIST)::INT = 0 THEN 1 ELSE JSONB_ARRAY_LENGTH(LIKE_LIST)::INT END) AS LIKE_LENGTH 
+			FROM 
+				TB_LIKE_UNDO  
+			WHERE 
+				1 = 1 
+				AND USER_NO = #{user_no} 
+		), TMP_1 AS (
+			SELECT 
+				JSONB_ARRAY_ELEMENTS_TEXT(LIKE_LIST)::BIGINT AS REG_USER_NO 
+			FROM 
+				TB_LIKE_UNDO  
+			WHERE 
+				1 = 1 
+				AND USER_NO = #{user_no} 
+			LIMIT (SELECT LIKE_LENGTH - 1 FROM TMP_0)
+		), TMP_2 AS (
+			SELECT 
+				  (ROW_NUMBER() OVER()) AS ROWNUM 
+				, REG_USER_NO 
+			FROM 
+				TMP_1 
+		), TMP_3 AS (
+			SELECT 
+				  #{user_no}::BIGINT AS USER_NO
+				, ARRAY_TO_JSON( ARRAY_AGG(REG_USER_NO) ) AS LIKE_LIST 
+			FROM 
+				TMP_2 
+		), TMP_4 AS (
+			UPDATE 
+				TB_LIKE_UNDO A 
+			SET 
+				LIKE_LIST = B.LIKE_LIST 
+			FROM 
+				TMP_3 B 
+			WHERE 
+				1 = 1 
+				AND A.USER_NO = B.USER_NO 
+			RETURNING A.USER_NO 
+		)
+		SELECT 
+			(SELECT REG_USER_NO FROM TMP_2 ORDER BY ROWNUM DESC LIMIT 1) as REG_USER_NO 
+		FROM 
+			TMP_4 
+    </select>
+
+	<select id="XY_00200_0.SELECT1">
+		/* 매치 리스트 가져오기 */
+		SELECT 
+			  A.room_no 
+			, A.room_key 
+			, A.TARGET_USER_NO 
+			, B.user_fanm 
+			, COALESCE(B.user_nm, '') AS user_nm 
+			, (COALESCE( (SELECT TMP.IMG_URL FROM TB_IMG TMP WHERE TMP.USER_NO = A.TARGET_USER_NO AND TMP.USE_YN = TRUE ORDER BY TMP.SORT LIMIT 1), 'https://via.placeholder.com/600') ) AS target_user_img 
+			, (CASE WHEN (SELECT COMMENT FROM TB_LIKE WHERE REG_USER_NO = A.MAKE_USER_NO AND LIKE_USER_NO = A.USER_NO AND LIKE_STATUS = 0) IS NULL THEN FALSE ELSE TRUE END) is_signal 
+		FROM 
+			TB_CHATTING_ROOM A
+		LEFT OUTER JOIN TB_USER B ON A.TARGET_USER_NO = B.USER_NO AND B.USER_STATUS = 0 
+		WHERE
+			1 = 1
+			AND A.USER_NO = #{user_no} 
+			AND A.ROOM_STAT = 0 
+			AND A.STS = 0 
+			<![CDATA[ AND A.ROOM_NO < #{room_no}  ]]>
+		ORDER BY A.ROOM_NO DESC
+		<!-- LIMIT #{limit_row}  -->
+    </select>
+
+	<select id="XY_00200_0.SELECT2">
+		/* 채팅룸 리스트 가져오기 */
+		SELECT 
+			  room_no
+			, room_key 
+			, target_user_no 
+			, user_nm 
+			, target_user_img 
+			, chat_info_json 
+			, unread_count 
+		FROM (
+			WITH TMP AS (
+				SELECT JSON_BUILD_OBJECT('has_msg', false, 'chat_seq_no', 0, 'msg_dt', 0, 'chatting', JSON_BUILD_OBJECT('type', 'TEXT', 'chat', '')) AS TMP_VALUE 
+			) 
+			SELECT 
+				  A.room_no 
+				, A.room_key 
+				, A.TARGET_USER_NO 
+				, COALESCE( (SELECT USER_NM FROM TB_USER WHERE USER_NO = TARGET_USER_NO AND USER_STATUS = 0), '') AS user_nm 
+				, (COALESCE( (SELECT TMP.IMG_URL FROM TB_IMG TMP WHERE TMP.USER_NO = A.TARGET_USER_NO AND TMP.USE_YN = TRUE ORDER BY TMP.SORT LIMIT 1), 'https://via.placeholder.com/600') ) AS target_user_img 
+				, COALESCE( 
+					(SELECT JSON_BUILD_OBJECT('has_msg', true, 'chat_seq_no', CHAT_SEQ_NO, 'msg_dt', REG_DT, 'chatting', CHATTING) FROM TB_CHATTING TMP WHERE TMP.ROOM_KEY = A.ROOM_KEY AND TMP.REG_DT >= A.LAST_READ_DT ORDER BY CHAT_SEQ_NO DESC LIMIT 1), 
+					(SELECT TMP_VALUE FROM TMP)
+					) AS chat_info_json 
+				, (SELECT COUNT(1) FROM TB_CHATTING TMP WHERE TMP.ROOM_KEY = A.ROOM_KEY AND TMP.REG_DT > A.LAST_READ_DT LIMIT 100) AS unread_count 
+			FROM 
+				TB_CHATTING_ROOM A 
+			WHERE 
+				1 = 1 
+				AND A.USER_NO = #{user_no} 
+				AND A.ROOM_STAT = 0 
+				<![CDATA[ AND A.ROOM_NO < #{room_no}  ]]>
+				AND A.IS_LEAVE = FALSE 
+				AND A.STS = 0 
+		) TMP 
+		ORDER BY 
+			chat_info_json->>'msg_dt' DESC 
+		
+		<!-- LIMIT #{limit_row}  -->
+    </select>
+
+	<update id="XY_00203.UPDATE">
+		/* 채팅룸 마지막 읽은 시점 반영하기 */
+		WITH TMP AS (
+			SELECT 
+				CHAT_SEQ_NO, REG_DT 
+			FROM 
+				TB_CHATTING 
+			WHERE 
+				1 = 1
+				AND ROOM_KEY = #{room_key}
+			ORDER BY 
+				CHAT_SEQ_NO DESC
+			LIMIT 1
+		)
+		UPDATE 
+			TB_CHATTING_ROOM A
+		SET
+			  READ_CHAT_SEQ_NO = B.CHAT_SEQ_NO
+			, LAST_READ_DT = B.REG_DT
+		FROM 
+			TMP B
+		WHERE 
+			1 = 1
+			AND A.USER_NO = #{user_no} 
+			AND A.ROOM_STAT = 0 
+			AND A.ROOM_KEY = #{room_key}
+			<![CDATA[ AND A.READ_CHAT_SEQ_NO < B.CHAT_SEQ_NO  ]]>
+			AND A.STS = 0 
+    </update>
+
+	<select id="XY_00203.SELECT_0">
+		/* 채팅룸 정보 가져오기  */
+		SELECT 
+			chat_seq_no,
+			room_key,
+
+			(
+				SELECT 
+					JSON_BUILD_OBJECT( 
+						'is_my_msg', false, 'user_nm', B.user_nm ) 
+				FROM 
+					TB_USER B 
+				WHERE 
+					B.USER_NO = CHAT_USER_NO
+			) msg_type,
+
+			COALESCE( (SELECT TMP.IMG_URL FROM TB_IMG TMP WHERE TMP.USER_NO = A.CHAT_USER_NO AND TMP.USE_YN = TRUE ORDER BY TMP.SORT LIMIT 1), 'https://via.placeholder.com/600' ) AS user_img,
+
+			chatting,
+			reg_dt
+		FROM 
+			TB_CHATTING
+		WHERE
+			1 = 1 
+			AND ROOM_KEY = #{room_key} 
+			<![CDATA[ AND CHAT_SEQ_NO > (   ]]>
+				SELECT 
+					LEAVE_CHAT_SEQ_NO 
+				FROM 
+					TB_CHATTING_ROOM 
+				WHERE 
+					1 = 1 
+					AND ROOM_KEY = #{room_key} 
+					AND ROOM_STAT = 0 
+					AND IS_LEAVE = FALSE 
+					AND USER_NO = #{user_no} 
+					AND STS = 0 
+			)
+			AND CHAT_SEQ_NO = #{chat_seq_no} 
+		ORDER BY CHAT_SEQ_NO DESC
+		LIMIT #{limit_row} 
+    </select>
+
+	<select id="XY_00203.SELECT_1">
+		/* 채팅 리스트 가져오기 (이전 데이터로 가져오기. 일반적인 경우 : 스크롤 위로 올렸을 경우) */
+		WITH TMP_TB_USER AS (
+			SELECT USER_NO, COALESCE(USER_NM, '') AS USER_NM FROM TB_USER WHERE USER_NO = #{user_no} AND USER_ID = #{user_id} 
+		), TMP_TB_USER_ROOM AS (
+			SELECT 
+				  LEAVE_CHAT_SEQ_NO
+				, TARGET_USER_NO 
+				, ROOM_KEY
+			FROM 
+				TB_CHATTING_ROOM 
+			WHERE 
+				1 = 1 
+				AND ROOM_KEY = #{room_key} 
+				AND ROOM_STAT = 0 
+				AND USER_NO = (SELECT USER_NO FROM TMP_TB_USER) 
+				AND STS = 0 
+		)
+		SELECT 
+			chat_seq_no,
+			room_key,
+
+			( 
+				CASE WHEN CHAT_USER_NO = #{user_no} THEN JSON_BUILD_OBJECT( 'is_my_msg', TRUE, 'user_nm', (SELECT COALESCE(USER_NM, '') AS USER_NM FROM TMP_TB_USER) ) 
+					 ELSE JSON_BUILD_OBJECT( 'is_my_msg', FALSE, 'user_nm', COALESCE( (SELECT COALESCE(USER_NM, '') AS USER_NM FROM TB_USER WHERE USER_NO = CHAT_USER_NO AND USE_YN = TRUE), '') ) 
+				END 
+			) msg_type, 
+			COALESCE( (SELECT TMP.IMG_URL FROM TB_IMG TMP WHERE TMP.USER_NO = CHAT_USER_NO AND TMP.USE_YN = TRUE LIMIT 1), 'https://via.placeholder.com/600' ) AS user_img,
+
+			chatting,
+			reg_dt, 
+			(SELECT TARGET_USER_NO FROM TMP_TB_USER_ROOM) target_user_no 
+		FROM 
+			  TB_CHATTING
+		WHERE
+			1 = 1 
+			AND ROOM_KEY = ( SELECT ROOM_KEY FROM TMP_TB_USER_ROOM ) 
+			<![CDATA[ AND CHAT_SEQ_NO > ( SELECT LEAVE_CHAT_SEQ_NO FROM TMP_TB_USER_ROOM )   ]]>
+			<![CDATA[ AND CHAT_SEQ_NO < #{chat_seq_no}  ]]>
+		ORDER BY CHAT_SEQ_NO DESC
+		LIMIT #{limit_row} 
+    </select>
+
+	<update id="XY_00210.UPDATE">
+		/* 메시지 보내기 */
+		WITH TMP_INSERT AS (
+			INSERT INTO TB_CHATTING AS A 
+			(ROOM_KEY, CHAT_USER_NO, CHATTING)
+			SELECT 
+				ROOM_KEY, USER_NO, #{chatting} 
+			FROM 
+				TB_CHATTING_ROOM 
+			WHERE 
+				1 = 1 
+				AND USER_NO = #{user_no} 
+				AND ROOM_STAT = 0 
+				AND ROOM_KEY = #{room_key} 
+				AND STS = 0 
+			RETURNING 
+				A.CHAT_SEQ_NO, A.REG_DT, A.ROOM_KEY 
+		), TMP_UPDATE AS ( 
+			UPDATE 
+				TB_CHATTING_ROOM A 
+			SET 
+				  LAST_READ_DT = B.REG_DT
+				, READ_CHAT_SEQ_NO = B.CHAT_SEQ_NO
+				, IS_LEAVE = FALSE 
+			FROM 
+				TMP_INSERT B
+			WHERE 
+				1 = 1 
+				AND A.ROOM_KEY = B.ROOM_KEY 
+				AND A.ROOM_STAT = 0 
+				AND A.USER_NO = #{user_no} 
+				AND A.STS = 0 
+			RETURNING
+				A.ROOM_KEY 
+		)
+		UPDATE 
+			TB_CHATTING_ROOM A 
+		SET 
+			IS_LEAVE = FALSE 
+		FROM 
+			TMP_UPDATE B 
+		WHERE 
+			1 = 1 
+			AND A.ROOM_KEY = B.ROOM_KEY 
+			AND A.ROOM_STAT = 0 
+			AND A.IS_LEAVE = TRUE 
+			AND A.STS = 0 
+    </update>
+
+	<select id="XY_00210.SELECT">
+		/* 메시지 보내기 */
+		WITH TMP AS (
+			SELECT 
+				USER_NO, TARGET_USER_NO, (CASE WHEN ROOM_STAT = 0 AND STS = 0 THEN FALSE ELSE TRUE END) AS IS_BLOCK 
+			FROM 
+				TB_CHATTING_ROOM 
+			WHERE 
+				1 = 1 
+				AND USER_NO = #{user_no} 
+				AND ROOM_STAT >= 0 
+				AND ROOM_KEY = #{room_key} 
+				AND STS >= 0 
+		)
+		SELECT 
+			TRUE AS is_block 
+		FROM 
+			TB_BLOCK 
+		WHERE 
+			1 = 1 
+			AND REG_USER_NO = (SELECT TARGET_USER_NO FROM TMP)
+			AND BLOCK_USER_NO = #{user_no} 
+			AND USE_YN = TRUE 
+		
+		UNION ALL 
+
+		SELECT 
+			is_block 
+		FROM 
+			TMP 
+		WHERE 
+			IS_BLOCK = TRUE
+			
+		LIMIT 1
+    </select>
+
+	<select id="XY_00210.SELECT3">
+		/* ROOM_KEY를 기반한 타켓 회원의 푸쉬 키 정보 조회*/
+		SELECT 
+			  A.PUSH_KEY
+			, A.USER_NO 
+			, B.new_msg 
+			, A.lang_code 
+		FROM 
+			  TB_USER A 
+			, TB_USER_SET B 
+		WHERE 
+			1 = 1 
+			AND A.USER_NO = B.USER_NO 
+			AND A.USER_NO = (
+				SELECT 
+					TARGET_USER_NO 
+				FROM 
+					TB_CHATTING_ROOM
+				WHERE 
+					1 = 1
+					AND USER_NO = #{user_no} 
+					AND ROOM_STAT = 0 
+					AND ROOM_KEY = #{room_key} 
+					AND STS = 0 
+				LIMIT 1
+			)
+		LIMIT 1
+	</select>
+
+	<update id="XY_00211.UPDATE">
+		/* 채팅룸 나가기 */
+		UPDATE 
+			TB_CHATTING_ROOM A
+		SET
+			  LEAVE_CHAT_SEQ_NO = COALESCE( (SELECT CHAT_SEQ_NO FROM TB_CHATTING WHERE ROOM_KEY = #{room_key} ORDER BY CHAT_SEQ_NO DESC LIMIT 1), 0) 
+			, LAST_READ_DT = COALESCE( (SELECT REG_DT FROM TB_CHATTING WHERE ROOM_KEY = #{room_key} ORDER BY CHAT_SEQ_NO DESC LIMIT 1), 0) 
+			, IS_LEAVE = TRUE 
+			, LEAVE_USER_NO = #{user_no} 
+			, ROOM_STAT = 99 
+			, STS = A.ROOM_NO 
+		WHERE 
+			1 = 1
+			AND A.ROOM_STAT = 0 
+			AND A.ROOM_KEY = #{room_key} 
+			AND A.STS = 0 
+    </update>
+	
+	<update id="XY_00211.UPDATE_BAK">
+		/* 채팅룸 나가기 */
+		WITH TMP AS (
+			SELECT 
+				CHAT_SEQ_NO, REG_DT 
+			FROM 
+				TB_CHATTING 
+			WHERE 
+				1 = 1
+				AND ROOM_KEY = #{room_key}
+			ORDER BY 
+				CHAT_SEQ_NO DESC
+			LIMIT 1
+		)
+		UPDATE 
+			TB_CHATTING_ROOM A
+		SET
+			  LEAVE_CHAT_SEQ_NO = B.CHAT_SEQ_NO 
+			, LAST_READ_DT = B.REG_DT 
+			, IS_LEAVE = TRUE 
+			, STS = A.ROOM_NO 
+		FROM 
+			TMP B
+		WHERE 
+			1 = 1
+			AND A.USER_NO = #{user_no} 
+			AND A.ROOM_STAT = 0 
+			AND A.ROOM_KEY = #{room_key} 
+			AND A.STS = 0 
+    </update>
+
+	<update id="XY_00212.UPDATE">
+		/* 채팅 block 처리 */
+		WITH TMP_1 AS ( 
+			SELECT 
+				  ROOM_KEY 
+			FROM 
+				TB_CHATTING_ROOM A 
+			WHERE 
+				1 = 1 
+				AND A.USER_NO = #{user_no} 
+				AND A.TARGET_USER_NO = #{target_user_no} 
+				AND A.STS = 0 
+		) 
+		UPDATE 
+			TB_CHATTING_ROOM A 
+		SET 
+			  LEAVE_CHAT_SEQ_NO = COALESCE( (SELECT CHAT_SEQ_NO FROM TB_CHATTING TMP WHERE TMP.ROOM_KEY = A.ROOM_KEY ORDER BY TMP.CHAT_SEQ_NO DESC LIMIT 1), 0) 
+			, LAST_READ_DT = COALESCE( (SELECT TMP.REG_DT FROM TB_CHATTING TMP WHERE TMP.ROOM_KEY = A.ROOM_KEY ORDER BY TMP.CHAT_SEQ_NO DESC LIMIT 1), 0) 
+			, IS_LEAVE = TRUE 
+			, LEAVE_USER_NO = #{user_no} 
+			, ROOM_STAT = 99001 
+			, STS = A.ROOM_NO 
+		FROM 
+			TMP_1 B 
+		WHERE 
+			1 = 1
+			AND A.ROOM_STAT = 0 
+			AND A.ROOM_KEY = B.ROOM_KEY 
+			AND A.STS = 0 
+    </update>
+
+	<update id="XY_00213.UPDATE">
+		/* 채팅 신고 처리 */
+		WITH TMP_1 AS ( 
+			SELECT 
+				  A.ROOM_KEY 
+			FROM 
+				TB_CHATTING_ROOM A 
+			WHERE 
+				1 = 1 
+				AND A.USER_NO = #{user_no} 
+				AND A.TARGET_USER_NO = #{target_user_no} 
+				AND A.STS = 0 
+		) 
+		UPDATE 
+			TB_CHATTING_ROOM A 
+		SET 
+			  LEAVE_CHAT_SEQ_NO = COALESCE( (SELECT CHAT_SEQ_NO FROM TB_CHATTING TMP WHERE TMP.ROOM_KEY = A.ROOM_KEY ORDER BY TMP.CHAT_SEQ_NO DESC LIMIT 1), 0) 
+			, LAST_READ_DT = COALESCE( (SELECT TMP.REG_DT FROM TB_CHATTING TMP WHERE TMP.ROOM_KEY = A.ROOM_KEY ORDER BY TMP.CHAT_SEQ_NO DESC LIMIT 1), 0) 
+			, IS_LEAVE = TRUE 
+			, LEAVE_USER_NO = #{user_no} 
+			, ROOM_STAT = 99002 
+			, STS = A.ROOM_NO 
+		FROM 
+			TMP_1 B 
+		WHERE 
+			1 = 1
+			AND A.ROOM_STAT = 0 
+			AND A.ROOM_KEY = B.ROOM_KEY 
+			AND A.STS = 0 
+    </update>
+
+	<select id="XY_00220.SELECT_1">
+		/* 나와 연결된 사람의 정보 가져오기 */
+		SELECT 
+			B.USER_NO AS TARGET_USER_NO,
+			B.user_fanm,
+			COALESCE(B.user_nm, '') AS user_nm,
+			EXTRACT(YEAR FROM AGE( TO_TIMESTAMP(B.BIRTH_DT) )) AS age, 
+			B.latitude,
+			B.longitude,
+			COALESCE(B.job, '') AS job,
+			B.height,
+			(CASE 
+				WHEN B.SCHOOL = 'EL_SP' OR B.SCHOOL = NULL THEN '' 
+				ELSE (SELECT "desc" FROM TB_LANG WHERE LANG_CODE = #{lang_code} AND CODE_ID = B.SCHOOL) 
+			END) as SCHOOL, 
+			(SELECT "desc" FROM TB_LANG WHERE LANG_CODE = #{lang_code} AND CODE_ID = B.BODYTYPE) as body_type, 
+			(SELECT "desc" FROM TB_LANG WHERE LANG_CODE = #{lang_code} AND CODE_ID = B.TRIBE) as tribe, 
+			(SELECT "desc" FROM TB_LANG WHERE LANG_CODE = #{lang_code} AND CODE_ID = B."position") as "position", 
+			
+			ROUND( WORD_SIMILARITY(
+				  (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_USER TMP WHERE TMP.USER_NO = A.USER_NO)
+				, B.PROFILE_RESULT::VARCHAR
+			) * 100 ) as over_all,
+
+			ROUND( WORD_SIMILARITY(
+				  (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_PROFILE_SET_USER TMP WHERE TMP.USER_NO = A.USER_NO AND PS_CODE = 'A_BL')
+				, (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_PROFILE_SET_USER TMP WHERE TMP.USER_NO = A.TARGET_USER_NO AND PS_CODE = 'A_BL')
+			) * 100 ) as belifes,
+
+			ROUND( WORD_SIMILARITY(
+				  (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_PROFILE_SET_USER TMP WHERE TMP.USER_NO = A.USER_NO AND PS_CODE = 'A_RE')
+				, (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_PROFILE_SET_USER TMP WHERE TMP.USER_NO = A.TARGET_USER_NO AND PS_CODE = 'A_RE')
+			) * 100 ) as relationships,
+
+			ROUND( WORD_SIMILARITY(
+				  (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_PROFILE_SET_USER TMP WHERE TMP.USER_NO = A.USER_NO AND PS_CODE = 'A_LI')
+				, (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_PROFILE_SET_USER TMP WHERE TMP.USER_NO = A.TARGET_USER_NO AND PS_CODE = 'A_LI')
+			) * 100 ) as lifestyle 
+		FROM 
+			TB_CHATTING_ROOM A 
+		LEFT OUTER JOIN TB_USER B ON A.TARGET_USER_NO = B.USER_NO 
+		WHERE
+			1 = 1
+			AND A.USER_NO = (SELECT USER_NO FROM TB_USER WHERE USER_ID = #{user_id} AND USER_NO = #{user_no} AND USER_STATUS = 0) 
+			AND A.ROOM_STAT = 0 
+			AND A.TARGET_USER_NO = #{target_user_no} 
+			AND B.USER_STATUS = 0 
+			AND A.STS = 0 
+    </select>
+
+	<select id="XY_00300_1.SELECT_1">
+		/* 새로운 매칭 리스트 가져오기 */
+		SELECT 
+			  B.user_no
+			, B.user_fanm
+			, COALESCE(B.user_nm, '') AS user_nm
+			, EXTRACT(YEAR FROM AGE( TO_TIMESTAMP(B.BIRTH_DT) )) AS age
+			, B.latitude
+			, B.longitude
+			, COALESCE(B.job, '') AS job 
+			, B.height
+			, (CASE 
+				WHEN B.SCHOOL = 'EL_SP' OR B.SCHOOL = NULL THEN '' 
+				ELSE (SELECT "desc" FROM TB_LANG WHERE LANG_CODE = #{lang_code} AND CODE_ID = B.SCHOOL) 
+			END) as SCHOOL
+			, (SELECT "desc" FROM TB_LANG WHERE LANG_CODE = #{lang_code} AND CODE_ID = B.BODYTYPE) as body_type
+			, (SELECT "desc" FROM TB_LANG WHERE LANG_CODE = #{lang_code} AND CODE_ID = B.TRIBE) as tribe
+			, (SELECT "desc" FROM TB_LANG WHERE LANG_CODE = #{lang_code} AND CODE_ID = B."position") as "position"
+
+			
+			, ROUND( WORD_SIMILARITY(
+				  A.PROFILE_RESULT::VARCHAR
+				, B.PROFILE_RESULT::VARCHAR
+			) * 100 ) as over_all
+
+			, ROUND( WORD_SIMILARITY(
+				  (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_PROFILE_SET_USER TMP WHERE TMP.USER_NO = A.USER_NO AND PS_CODE = 'A_BL')
+				, (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_PROFILE_SET_USER TMP WHERE TMP.USER_NO = B.USER_NO AND PS_CODE = 'A_BL')
+			) * 100 ) as belifes
+
+			, ROUND( WORD_SIMILARITY(
+				  (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_PROFILE_SET_USER TMP WHERE TMP.USER_NO = A.USER_NO AND PS_CODE = 'A_RE')
+				, (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_PROFILE_SET_USER TMP WHERE TMP.USER_NO = B.USER_NO AND PS_CODE = 'A_RE')
+			) * 100 ) as relationships
+
+			, ROUND( WORD_SIMILARITY(
+				  (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_PROFILE_SET_USER TMP WHERE TMP.USER_NO = A.USER_NO AND PS_CODE = 'A_LI')
+				, (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_PROFILE_SET_USER TMP WHERE TMP.USER_NO = B.USER_NO AND PS_CODE = 'A_LI')
+			) * 100 ) as lifestyle
+
+
+			, EARTH_DISTANCE(
+				LL_TO_EARTH(A.LATITUDE, A.LONGITUDE), LL_TO_EARTH(B.LATITUDE, B.LONGITUDE)
+			) AS distance
+
+			, (SELECT TMP.SECRET_MODE FROM TB_USER_SET TMP WHERE TMP.USER_NO = B.USER_NO) AS SECRET_MODE 
+
+		FROM
+			TB_USER A 
+		FULL JOIN TB_USER B ON 
+			1 = 1 
+			AND A.USER_NO != B.USER_NO 
+			AND B.USER_STATUS = 0 
+			AND B.USER_NO != 461 
+			<!-- 461은 테스트 계정 -->
+			AND B.HEIGHT IS NOT NULL
+			AND B.BODYTYPE IS NOT NULL
+			AND B.TRIBE IS NOT NULL
+			<!-- AND B.JOB IS NOT NULL -->
+			AND B.SCHOOL IS NOT NULL
+			AND B.PROFILE_RESULT IS NOT NULL
+			AND B.BIRTH_DT IS NOT NULL
+			<!-- AND B.LATITUDE IS NOT NULL
+			AND B.LONGITUDE IS NOT NULL -->
+			AND B."position" IS NOT NULL
+			AND B.HAS_IMG = TRUE 
+			AND A.COUNTRY_CODE = B.COUNTRY_CODE 
+			AND B.COUNTRY_CODE = #{country_code} 
+			AND B.BLOCK_STS = 0 
+		LEFT OUTER JOIN TB_USER_SET C ON B.USER_NO = C.USER_NO AND C.SECRET_MODE = FALSE 
+		WHERE 
+			1 = 1 
+			AND B.USER_NO IS NOT NULL 
+			AND A.COUNTRY_CODE = B.COUNTRY_CODE 
+			AND B.COUNTRY_CODE = #{country_code} 
+			AND B.USER_STATUS = 0 
+			AND A.USER_NO = #{user_no} 
+			AND A.USER_ID = #{user_id} 
+			AND B.USER_NO NOT IN ( SELECT BLOCK_USER_NO FROM TB_BLOCK WHERE REG_USER_NO = A.USER_NO ) 
+			<![CDATA[ AND B.USER_NO NOT IN ( SELECT TARGET_USER_NO FROM TB_CHATTING_ROOM WHERE USER_NO = A.USER_NO AND ROOM_STAT <> 99 AND STS = 0  )  ]]>
+			
+			
+			<![CDATA[ AND B.USER_NO NOT IN ( SELECT LIKE_USER_NO FROM TB_LIKE WHERE REG_USER_NO = A.USER_NO AND LIKE_STATUS = 0  )  ]]>
+			
+			
+			<![CDATA[ AND B.USER_NO NOT IN ( SELECT JSONB_ARRAY_ELEMENTS_TEXT( MATCH_LIST )::BIGINT FROM TB_MATCH_HISTORY WHERE USER_NO = A.USER_NO AND MATCH_TYPE = 0 AND REG_DT >= (FLOOR(DATE_PART('EPOCH'::TEXT, NOW() - INTERVAL '3 HOURS')))::BIGINT  )  ]]>
+			AND C.SECRET_MODE = FALSE 
+			AND B.BLOCK_STS = 0 
+
+		<if test="age_std != null">
+			<![CDATA[ AND EXTRACT(YEAR FROM AGE(TO_TIMESTAMP(B.BIRTH_DT)::DATE)) >= ${age_std}  ]]>
+		</if>
+
+		<if test="age_end != null">
+			<![CDATA[ AND EXTRACT(YEAR FROM AGE(TO_TIMESTAMP(B.BIRTH_DT)::DATE)) <= ${age_end}    ]]>
+		</if>
+
+		<if test="acc_value_std != null">
+			<![CDATA[ AND WORD_SIMILARITY(A.PROFILE_RESULT::VARCHAR, B.PROFILE_RESULT::VARCHAR) >= #{acc_value_std} / 100 :: FLOAT  ]]> 
+		</if> 
+		<if test="acc_value_end != null">
+			<![CDATA[ AND WORD_SIMILARITY(A.PROFILE_RESULT::VARCHAR, B.PROFILE_RESULT::VARCHAR) <= #{acc_value_end} / 100 :: FLOAT   ]]>
+		</if> 
+		<if test="dist_std != null">
+			<![CDATA[ AND EARTH_DISTANCE(LL_TO_EARTH(A.LATITUDE, A.LONGITUDE), LL_TO_EARTH(B.LATITUDE, B.LONGITUDE)) >= #{dist_std} * 1000 :: BIGINT ]]> 
+		</if> 
+		<if test="dist_end != null">
+			<![CDATA[ AND EARTH_DISTANCE(LL_TO_EARTH(A.LATITUDE, A.LONGITUDE), LL_TO_EARTH(B.LATITUDE, B.LONGITUDE)) <= #{dist_end} * 1000 :: BIGINT ]]>
+		</if> 
+		<if test="height_std != null">
+			<![CDATA[ AND B.HEIGHT >= #{height_std}   ]]>
+		</if> 
+		<if test="height_end != null">
+			<![CDATA[ AND B.HEIGHT <= #{height_end}  ]]>
+		</if> 
+		<if test="bodytype_key != null">
+			AND B.BODYTYPE = #{bodytype_key} 
+		</if> 
+		<if test="position_key != null">
+			AND B."position" = #{position_key} 
+		</if> 
+		<if test="tribe_key != null">
+			AND B.TRIBE = #{tribe_key} 
+		</if> 
+		ORDER BY 
+			<!-- OVER_ALL DESC, B.USER_NO DESC   -->
+			  B.UP_DT DESC
+			, B.USER_NO DESC 
+		LIMIT #{limit_row} 
+	</select>
+
+	<insert id="XY_00300_1.INSERT_1">
+		/* 유저 매치 히스토리 담기 */
+		WITH TMP_0 AS (
+			SELECT 
+				REG_DT 
+			FROM 
+				TB_MATCH_HISTORY 
+			WHERE 
+				1 = 1 
+				AND USER_NO = #{user_no} 
+				AND MATCH_TYPE = 0 
+				<![CDATA[ AND REG_DT >= (FLOOR(DATE_PART('EPOCH'::TEXT, NOW() - INTERVAL '3 HOURS')))::BIGINT  ]]> 
+		), TMP_1 AS (
+			SELECT 
+				JSONB_ARRAY_ELEMENTS_TEXT(MATCH_LIST)::BIGINT AS MATCH_USER_NO 
+			FROM 
+				TB_MATCH_HISTORY 
+			WHERE 
+				1 = 1 
+				AND USER_NO = #{user_no} 
+				AND MATCH_TYPE = 0 
+				<![CDATA[ AND REG_DT >= (FLOOR(DATE_PART('EPOCH'::TEXT, NOW() - INTERVAL '3 HOURS')))::BIGINT  ]]> 
+			
+			UNION ALL 
+			
+			SELECT 
+				#{match_user_no}::BIGINT AS MATCH_USER_NO 
+		), TMP_2 AS (
+			SELECT 
+				  #{user_no}::BIGINT AS USER_NO
+				, (
+					CASE WHEN (SELECT REG_DT FROM TMP_0) IS NULL THEN (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT 
+					ELSE (SELECT REG_DT::BIGINT FROM TMP_0) END 
+				) AS REG_DT 
+				, ARRAY_TO_JSON( ARRAY_AGG(MATCH_USER_NO) ) AS MATCH_LIST 
+			FROM 
+				TMP_1 
+		), TMP_3 AS (
+			UPDATE 
+				TB_MATCH_HISTORY A 
+			SET 
+				  MATCH_LIST = B.MATCH_LIST 
+				, REG_DT = (CASE WHEN A.REG_DT = B.REG_DT THEN A.REG_DT ELSE B.REG_DT END) 
+				, UP_DT = (FLOOR((DATE_PART('EPOCH'::TEXT, CLOCK_TIMESTAMP()) * (1000)::DOUBLE PRECISION)))::BIGINT 
+			FROM 
+				TMP_2 B 
+			WHERE 
+				1 = 1 
+				AND A.USER_NO = B.USER_NO 
+				AND MATCH_TYPE = 0 
+			RETURNING * 
+		) 
+		INSERT INTO TB_MATCH_HISTORY 
+		(USER_NO, MATCH_LIST) 
+		SELECT 
+			USER_NO, MATCH_LIST 
+		FROM 
+			TMP_2 
+		WHERE NOT EXISTS (
+			SELECT * FROM TMP_3
+		)
+    </insert>
+
+	<select id="XY_00300_1.SELECT_2">
+		/* 매치 히스토리 마지막 유저키 가져오기 */
+		SELECT 
+			JSONB_ARRAY_ELEMENTS_TEXT(MATCH_LIST)::BIGINT AS MATCH_USER_NO 
+		FROM 
+			TB_MATCH_HISTORY 
+		WHERE 
+			1 = 1 
+			AND USER_NO = #{user_no} 
+			AND MATCH_TYPE = 0 
+			<![CDATA[ AND REG_DT >= (FLOOR(DATE_PART('EPOCH'::TEXT, NOW() - INTERVAL '3 HOURS')))::BIGINT  ]]> 
+    </select>
+
+	<select id="XY_00300_2.SELECT_1">
+		/* Undo 유저키 가져오기 */
+		WITH TMP_0 AS (
+			SELECT 
+				  REG_DT
+				, (CASE WHEN JSONB_ARRAY_LENGTH(MATCH_LIST)::INT = 0 THEN 1 ELSE JSONB_ARRAY_LENGTH(MATCH_LIST)::INT END) AS MATCH_LENGTH 
+			FROM 
+				TB_MATCH_HISTORY 
+			WHERE 
+				1 = 1 
+				AND USER_NO = #{user_no} 
+				AND MATCH_TYPE = 0 
+				<![CDATA[ AND REG_DT >= (FLOOR(DATE_PART('EPOCH'::TEXT, NOW() - INTERVAL '3 HOURS')))::BIGINT  ]]> 
+		), TMP_1 AS (
+			SELECT 
+				JSONB_ARRAY_ELEMENTS_TEXT(MATCH_LIST)::BIGINT AS MATCH_USER_NO 
+			FROM 
+				TB_MATCH_HISTORY 
+			WHERE 
+				1 = 1 
+				AND USER_NO = #{user_no} 
+				AND MATCH_TYPE = 0 
+				<![CDATA[ AND REG_DT >= (FLOOR(DATE_PART('EPOCH'::TEXT, NOW() - INTERVAL '3 HOURS')))::BIGINT  ]]> 
+			LIMIT (SELECT MATCH_LENGTH - 1 FROM TMP_0)
+		), TMP_2 AS (
+			SELECT 
+				  (ROW_NUMBER() OVER()) AS ROWNUM 
+				, MATCH_USER_NO 
+			FROM 
+				TMP_1 
+		), TMP_3 AS (
+			SELECT 
+				  #{user_no}::BIGINT AS USER_NO
+				, (
+					CASE WHEN (SELECT REG_DT FROM TMP_0) IS NULL THEN (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT 
+					ELSE (SELECT REG_DT::BIGINT FROM TMP_0) END 
+				) AS REG_DT 
+				, ARRAY_TO_JSON( ARRAY_AGG(MATCH_USER_NO) ) AS MATCH_LIST 
+			FROM 
+				TMP_2 
+		), TMP_4 AS (
+			UPDATE 
+				TB_MATCH_HISTORY A 
+			SET 
+				MATCH_LIST = B.MATCH_LIST 
+				, REG_DT = (CASE WHEN A.REG_DT = B.REG_DT THEN A.REG_DT ELSE B.REG_DT END) 
+			FROM 
+				TMP_3 B 
+			WHERE 
+				1 = 1 
+				AND A.USER_NO = B.USER_NO 
+				AND MATCH_TYPE = 0 
+			RETURNING A.USER_NO 
+		)
+		SELECT 
+			(SELECT MATCH_USER_NO FROM TMP_2 ORDER BY ROWNUM DESC LIMIT 1) as match_user_no 
+		FROM 
+			TMP_4 		
+    </select>
+
+	<select id="XY_00300_2.SELECT_1_1">
+		/* Undo 유저키 가져오기 */
+		WITH TMP_0 AS (
+			SELECT 
+				  REG_DT
+				, (CASE WHEN JSONB_ARRAY_LENGTH(MATCH_LIST)::INT = 0 THEN 1 ELSE JSONB_ARRAY_LENGTH(MATCH_LIST)::INT END) AS MATCH_LENGTH 
+			FROM 
+				TB_MATCH_HISTORY 
+			WHERE 
+				1 = 1 
+				AND USER_NO = #{user_no} 
+				AND MATCH_TYPE = 0 
+				<![CDATA[ AND REG_DT >= (FLOOR(DATE_PART('EPOCH'::TEXT, NOW() - INTERVAL '3 HOURS')))::BIGINT  ]]> 
+		), TMP_1 AS (
+			SELECT 
+				JSONB_ARRAY_ELEMENTS_TEXT(MATCH_LIST)::BIGINT AS MATCH_USER_NO 
+			FROM 
+				TB_MATCH_HISTORY 
+			WHERE 
+				1 = 1 
+				AND USER_NO = #{user_no} 
+				AND MATCH_TYPE = 0 
+				<![CDATA[ AND REG_DT >= (FLOOR(DATE_PART('EPOCH'::TEXT, NOW() - INTERVAL '3 HOURS')))::BIGINT  ]]> 
+			LIMIT (SELECT MATCH_LENGTH - 1 FROM TMP_0)
+		), TMP_2 AS (
+			SELECT 
+				  (ROW_NUMBER() OVER()) AS ROWNUM 
+				, MATCH_USER_NO 
+			FROM 
+				TMP_1 
+		), TMP_3 AS (
+			SELECT 
+				  #{user_no}::BIGINT AS USER_NO
+				, (
+					CASE WHEN (SELECT REG_DT FROM TMP_0) IS NULL THEN (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT 
+					ELSE (SELECT REG_DT::BIGINT FROM TMP_0) END 
+				) AS REG_DT 
+				, ARRAY_TO_JSON( ARRAY_AGG(MATCH_USER_NO) ) AS MATCH_LIST 
+			FROM 
+				TMP_2 
+		), TMP_4 AS (
+			UPDATE 
+				TB_MATCH_HISTORY A 
+			SET 
+				MATCH_LIST = B.MATCH_LIST 
+				, REG_DT = (CASE WHEN A.REG_DT = B.REG_DT THEN A.REG_DT ELSE B.REG_DT END) 
+			FROM 
+				TMP_3 B 
+			WHERE 
+				1 = 1 
+				AND A.USER_NO = B.USER_NO 
+				AND MATCH_TYPE = 0 
+			RETURNING A.USER_NO 
+		)
+		SELECT 
+			(SELECT MATCH_USER_NO FROM TMP_2 ORDER BY ROWNUM DESC LIMIT 1) as match_user_no 
+		FROM 
+			TMP_4 		
+    </select>
+
+	<select id="XY_00300_2.SELECT_2">
+		/* Undo 매칭 가져오기 */
+		SELECT 
+			  B.user_no
+			, B.user_fanm
+			, COALESCE(B.user_nm, '') AS user_nm 
+			, EXTRACT(YEAR FROM AGE( TO_TIMESTAMP(B.BIRTH_DT) )) AS age
+			, B.latitude
+			, B.longitude
+			, COALESCE(B.job, '') AS job 
+			, B.height
+			, (CASE 
+				WHEN B.SCHOOL = 'EL_SP' OR B.SCHOOL = NULL THEN '' 
+				ELSE (SELECT "desc" FROM TB_LANG WHERE LANG_CODE = #{lang_code} AND CODE_ID = B.SCHOOL) 
+			END) as SCHOOL
+			, (SELECT "desc" FROM TB_LANG WHERE LANG_CODE = #{lang_code} AND CODE_ID = B.BODYTYPE) as body_type
+			, (SELECT "desc" FROM TB_LANG WHERE LANG_CODE = #{lang_code} AND CODE_ID = B.TRIBE) as tribe
+			, (SELECT "desc" FROM TB_LANG WHERE LANG_CODE = #{lang_code} AND CODE_ID = B."position") as "position"
+
+			
+			, ROUND( WORD_SIMILARITY(
+				  A.PROFILE_RESULT::VARCHAR
+				, B.PROFILE_RESULT::VARCHAR
+			) * 100 ) as over_all
+
+			, ROUND( WORD_SIMILARITY(
+				  (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_PROFILE_SET_USER TMP WHERE TMP.USER_NO = A.USER_NO AND PS_CODE = 'A_BL')
+				, (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_PROFILE_SET_USER TMP WHERE TMP.USER_NO = B.USER_NO AND PS_CODE = 'A_BL')
+			) * 100 ) as belifes
+
+			, ROUND( WORD_SIMILARITY(
+				  (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_PROFILE_SET_USER TMP WHERE TMP.USER_NO = A.USER_NO AND PS_CODE = 'A_RE')
+				, (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_PROFILE_SET_USER TMP WHERE TMP.USER_NO = B.USER_NO AND PS_CODE = 'A_RE')
+			) * 100 ) as relationships
+
+			, ROUND( WORD_SIMILARITY(
+				  (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_PROFILE_SET_USER TMP WHERE TMP.USER_NO = A.USER_NO AND PS_CODE = 'A_LI')
+				, (SELECT TMP.PROFILE_RESULT::VARCHAR FROM TB_PROFILE_SET_USER TMP WHERE TMP.USER_NO = B.USER_NO AND PS_CODE = 'A_LI')
+			) * 100 ) as lifestyle
+
+
+			, EARTH_DISTANCE(
+				LL_TO_EARTH(A.LATITUDE, A.LONGITUDE), LL_TO_EARTH(B.LATITUDE, B.LONGITUDE)
+			) AS distance
+
+			, (SELECT TMP.SECRET_MODE FROM TB_USER_SET TMP WHERE TMP.USER_NO = B.USER_NO) AS SECRET_MODE 
+		FROM
+			TB_USER A 
+		FULL JOIN TB_USER B ON 
+			B.USER_NO = #{match_user_no} AND A.USER_NO != B.USER_NO AND B.USE_YN = TRUE 
+		WHERE 
+			1 = 1 
+			AND A.USER_NO = #{user_no} 
+			AND A.USER_ID = #{user_id} 
+			AND B.USER_NO = #{match_user_no} 
+		LIMIT #{limit_row} 
+	</select>
+
+	<select id="XY_00300_3.SELECT">
+		/* 매치에서 좋아요 하기 */
+		WITH TMP_TB_USER AS (
+			SELECT USER_NO, USER_NM FROM TB_USER WHERE USER_NO = #{user_no} AND USER_ID = #{user_id} 
+		), TMP_TB_USER_TARGET AS (
+			SELECT USER_NO, USER_ID, PUSH_KEY, LANG_CODE FROM TB_USER WHERE USER_NO = #{match_user_no} 
+		), TMP_1 AS (
+			UPDATE 
+				TB_LIKE A 
+			SET 
+				LIKE_STATUS = A.LIKE_NO  
+			WHERE 
+				1 = 1 
+				AND A.REG_USER_NO = #{match_user_no} 
+				AND A.LIKE_USER_NO = (SELECT USER_NO FROM TMP_TB_USER) 
+				AND A.LIKE_STATUS = 0 
+			RETURNING 
+				  A.REG_USER_NO
+				, A.LIKE_USER_NO
+				, (CASE WHEN A.REG_USER_NO > A.LIKE_USER_NO THEN (A.LIKE_USER_NO || '_' || A.REG_USER_NO)::VARCHAR ELSE (A.REG_USER_NO || '_' || A.LIKE_USER_NO)::VARCHAR END) AS ROOM_KEY 
+		), TMP_2 AS (
+			INSERT INTO TB_CHATTING_ROOM 
+			(
+				  USER_NO
+				, ROOM_KEY
+				, TARGET_USER_NO
+				, MAKE_USER_NO
+				, JOIN_USER_NO
+				, MAKE_UUID
+				, JOIN_UUID
+			)
+			SELECT 
+				  B.REG_USER_NO AS USER_NO 
+				, B.ROOM_KEY AS ROOM_KEY 
+				, B.LIKE_USER_NO AS TARGET_USER_NO 
+				, B.REG_USER_NO AS MAKE_USER_NO 
+				, B.LIKE_USER_NO AS JOIN_USER_NO 
+				, (SELECT USER_ID FROM TMP_TB_USER_TARGET) AS MAKE_UUID 
+				, #{user_id} AS JOIN_UUID 
+			FROM 
+				TMP_1 B 
+			UNION ALL 
+			SELECT 
+				  C.LIKE_USER_NO AS USER_NO 
+				, C.ROOM_KEY AS ROOM_KEY 
+				, C.REG_USER_NO AS TARGET_USER_NO 
+				, C.REG_USER_NO AS MAKE_USER_NO 
+				, C.LIKE_USER_NO AS JOIN_USER_NO 
+				, (SELECT USER_ID FROM TMP_TB_USER_TARGET) AS MAKE_UUID 
+				, #{user_id} AS JOIN_UUID 
+			FROM 
+				TMP_1 C 
+			
+			GROUP BY 
+				USER_NO, ROOM_KEY, TARGET_USER_NO, MAKE_USER_NO, JOIN_USER_NO, MAKE_UUID, JOIN_UUID 
+
+			RETURNING 
+				room_no, user_no, room_key, target_user_no 
+		), TMP_3 AS (
+			INSERT INTO TB_LIKE 
+			(
+				  REG_USER_NO 
+				, LIKE_USER_NO 
+				, COMMENT 
+			)
+			SELECT 
+				  USER_NO 
+				, #{match_user_no} 
+				, #{comment} 
+			FROM 
+				TMP_TB_USER 
+			WHERE NOT EXISTS (
+				SELECT * FROM TMP_2
+			) 
+			RETURNING 
+				FALSE AS IS_LIKE, LIKE_NO  
+		)
+		SELECT 
+			  is_like 
+			, (SELECT PUSH_KEY FROM TMP_TB_USER_TARGET) AS push_key 
+			, (SELECT LANG_CODE FROM TMP_TB_USER_TARGET) AS lang_code 
+			, (SELECT USER_NM FROM TMP_TB_USER) AS user_nm 
+			, like_no 
+		FROM 
+			TMP_3 
+		UNION ALL 
+		SELECT 
+			  TRUE AS is_like 
+			, (SELECT PUSH_KEY FROM TMP_TB_USER_TARGET) AS push_key 
+			, (SELECT LANG_CODE FROM TMP_TB_USER_TARGET) AS lang_code 
+			, (SELECT USER_NM FROM TMP_TB_USER) AS user_nm 
+			, -1 AS like_no 
+		FROM 
+			TMP_2 
+		WHERE 
+			1 = 1 
+			AND USER_NO = (SELECT USER_NO FROM TMP_TB_USER) 
+			AND TARGET_USER_NO = #{match_user_no} 
+		LIMIT 1 
+    </select>
+
+	<select id="XY.TEMP.SELECT_1">
+		SELECT 
+			1 
+		FROM 
+			TB_MATCH_HISTORY 
+		WHERE 
+			1 = 1 
+			AND USER_NO = #{user_no} 
+			AND MATCH_TYPE = 0 
+			<![CDATA[ AND UP_DT >= (FLOOR((DATE_PART('EPOCH'::TEXT, CLOCK_TIMESTAMP()) * (1000)::DOUBLE PRECISION)))::BIGINT - 500  ]]> 
+    </select>
+
+	<select id="XY.LIKE.COUNT.SELECT">
+		/* 무료버전인 경우 UTC 기준 24시간 이내 라이크 한 갯수 가져오기 */
+		SELECT 
+			COUNT(1) AS cnt 
+		FROM 
+			TB_LIKE 
+		WHERE 
+			1 = 1 
+			AND REG_USER_NO = #{reg_user_no} 
+			<![CDATA[ AND REG_DT >= (FLOOR(DATE_PART('EPOCH'::TEXT, DATE_TRUNC('DAY', NOW())::DATE)))::BIGINT  ]]> 
+		LIMIT 
+			#{like_cnt_max} 
+    </select>
+
+	<select id="XY.LIKE.CHECK.SELECT">
+		/* 라이크 체크하기 */ 
+		SELECT 
+			  <![CDATA[ COALESCE( (SELECT TRUE FROM TB_USER_PAY WHERE USER_NO = #{user_no} AND PAY_KEY = 'PAY_KEY' AND EXP_DT >= (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT ORDER BY USER_PAY_NO DESC LIMIT 1), FALSE) AS is_paid  ]]> 
+			, COALESCE( (SELECT TRUE FROM TB_LIKE WHERE REG_USER_NO = #{user_no} AND LIKE_USER_NO = #{match_user_no} AND LIKE_STATUS = 0 ), FALSE) AS has_like 
+			, <![CDATA[ COALESCE( (SELECT COUNT(1) FROM TB_LIKE WHERE REG_USER_NO = #{user_no} AND REG_DT >= (FLOOR(DATE_PART('EPOCH'::TEXT, DATE_TRUNC('DAY', NOW())::DATE)))::BIGINT LIMIT #{like_cnt_max}), 0) AS like_cnt  ]]> 
+    </select>
+
+	<insert id="XY_00777.INSERT">
+		/* 구독 하기 */
+		INSERT INTO TB_USER_PAY 
+		(
+			  USER_NO 
+			, PAY_KEY 
+			, EXP_DT 
+			, PAY_INFO 
+			, PAY_DATA 
+		)
+		SELECT 
+			  USER_NO 
+			, 'PAY_KEY'
+			, #{exp_dt} 
+			, #{pay_info} 
+			, #{pay_data} 
+		FROM 
+			TB_USER 
+		WHERE 
+			1 = 1 
+			AND USER_ID = #{user_id}
+			AND USER_NO = #{user_no} 
+			AND USER_STATUS = 0 
+    </insert>
+
+	<select id="XY_00900.SELECT">
+		/* 계정삭제 */
+		UPDATE 
+			TB_USER 
+		SET 
+			  USE_YN = FALSE 
+			, USER_STATUS = USER_NO 
+			, DEL_DT = TRUNC(EXTRACT(EPOCH FROM NOW())) 
+		WHERE 
+			1 = 1  
+			AND USER_ID = #{user_id} 
+			AND USER_NO = #{user_no} 
+			AND USER_STATUS = 0 
+		RETURNING 
+			USER_ID 
+    </select>
+    
+    <select id="XY_00300_3.SELECT_1">
+		/* 채팅 정보 및 좋아요 정보 조합 */
+		SELECT 
+			  A.comment
+			, (CASE WHEN A.COMMENT IS NULL THEN FALSE ELSE TRUE END) AS is_signal
+			, B.room_key
+			, B.target_user_no
+			, B.room_no
+		FROM 
+			  TB_LIKE A
+			, TB_CHATTING_ROOM B 
+		WHERE 
+			1 = 1 
+			AND A.REG_USER_NO = #{reg_user_no} 
+			AND A.LIKE_USER_NO = #{user_no} 
+			AND A.LIKE_STATUS = 0 
+
+			AND B.USER_NO = A.LIKE_USER_NO
+			AND B.TARGET_USER_NO = A.REG_USER_NO
+			AND B.ROOM_STAT = 0 
+			AND B.STS = 0 
+	</select>
+
+	<insert id="XY_00999.INSERT_1">
+		/* 차단하기 */
+		WITH TMP AS (
+			SELECT 
+				  USER_NO 
+				, #{block_user_no}::BIGINT AS BLOCK_USER_NO
+			FROM 
+				TB_USER 
+			WHERE 
+				1 = 1
+				AND USER_ID = #{user_id} 
+				AND USER_NO = #{user_no} 
+				AND USER_STATUS = 0 
+		)
+		INSERT INTO TB_BLOCK 
+			(REG_USER_NO, BLOCK_USER_NO) 
+		SELECT 
+			  USER_NO 
+			, BLOCK_USER_NO 
+		FROM 
+			TMP 
+		WHERE
+			NOT EXISTS ( 
+				SELECT 1 
+				FROM 
+					  TB_BLOCK A 
+					, TMP B 
+				WHERE 
+					1 = 1 
+					AND A.REG_USER_NO = B.USER_NO::BIGINT
+					AND A.BLOCK_USER_NO = B.BLOCK_USER_NO::BIGINT 
+			)
+	</insert>
+	
+	<insert id="XY_00999.INSERT_2">
+		/*신고하기*/
+		WITH TMP AS (
+			SELECT 
+				  USER_NO 
+				, #{report_user_no}::BIGINT AS REPORT_USER_NO 
+				, #{report_key} AS REPORT_KEY 
+				, #{report_title} AS REPORT_TITLE 
+				, #{report_comment} AS REPORT_COMMENT 
+			FROM 
+				TB_USER 
+			WHERE 
+				1 = 1
+				AND USER_ID = #{user_id} 
+				AND USER_NO = #{user_no} 
+				AND USER_STATUS = 0 
+		)
+		INSERT INTO TB_REPORT 
+			(REG_USER_NO, REPORT_USER_NO, REPORT_KEY, REPORT_TITLE, REPORT_COMMENT) 
+		SELECT 
+			  USER_NO::BIGINT 
+			, REPORT_USER_NO::BIGINT 
+			, REPORT_KEY
+			, REPORT_TITLE
+			, REPORT_COMMENT
+		FROM 
+			TMP 
+		WHERE
+			NOT EXISTS ( 
+				SELECT 1 
+				FROM 
+					  TB_REPORT A 
+					, TMP B 
+				WHERE 
+					1 = 1 
+					AND A.REG_USER_NO = B.USER_NO
+					AND A.REPORT_USER_NO = B.REPORT_USER_NO::BIGINT 
+			)
+	</insert>
+
+	<select id="XY_00999.SELECT_1">
+		/* 신고 리스트 가져오기 */
+		SELECT 
+			  A.code_id
+			, B."desc" 
+		FROM 
+			  TB_CODE A 
+			, TB_LANG B 
+		WHERE 
+			1 = 1 
+			AND A.CODE_GB = 'RP' 
+			AND A.USE_YN = TRUE 
+			AND A.CODE_ID = B.CODE_ID
+			AND B.LANG_CODE = #{lang_code} 
+			AND B.USE_YN = TRUE
+		ORDER BY 
+			A.CODE_NO 
+    </select>
+
+	<update id="XY.MATCH.HISTORY.REMOVE.UPDATE">
+		/* 매치 히스토리에서 제외하기 */
+		WITH TMP_1 AS (
+			SELECT 
+				JSONB_ARRAY_ELEMENTS_TEXT(MATCH_LIST)::BIGINT AS MATCH_USER_NO 
+			FROM 
+				TB_MATCH_HISTORY 
+			WHERE 
+				1 = 1 
+				AND USER_NO = #{user_no} 
+				AND MATCH_TYPE = 0 
+		), TMP_2 AS (
+			SELECT 
+				  #{user_no}::BIGINT AS USER_NO
+				, ARRAY_TO_JSON( ARRAY_AGG(MATCH_USER_NO) ) AS MATCH_LIST 
+			FROM 
+				TMP_1
+			WHERE 
+				<![CDATA[ MATCH_USER_NO <> #{match_user_no}   ]]>
+		)
+		UPDATE 
+			TB_MATCH_HISTORY A 
+		SET 
+			MATCH_LIST = B.MATCH_LIST 
+		FROM 
+			TMP_2 B 
+		WHERE 
+			1 = 1 
+			AND A.USER_NO = B.USER_NO 
+			AND MATCH_TYPE = 0 
+    </update>
+
+	<update id="XY_00999.UPDATE_2">
+		/* 좋아요 히스토리에서 제외하기 */
+		WITH TMP_1 AS (
+			SELECT 
+				JSONB_ARRAY_ELEMENTS_TEXT(LIKE_LIST)::BIGINT AS REG_USER_NO 
+			FROM 
+				TB_LIKE_UNDO 
+			WHERE 
+				1 = 1 
+				AND USER_NO = #{user_no} 
+		), TMP_2 AS (
+			SELECT 
+				#{user_no}::BIGINT AS USER_NO
+				, ARRAY_TO_JSON( ARRAY_AGG(REG_USER_NO) ) AS LIKE_LIST 
+			FROM 
+				TMP_1
+			WHERE 
+				<![CDATA[ REG_USER_NO <> #{reg_user_no}   ]]>
+		)
+		UPDATE 
+			TB_LIKE_UNDO A 
+		SET 
+			LIKE_LIST = B.LIKE_LIST 
+		FROM 
+			TMP_2 B 
+		WHERE 
+			1 = 1 
+			AND A.USER_NO = B.USER_NO 
+    </update>
+
+	<update id="XY_00999.UPDATE_3">
+		/* 좋아요 리스트에서 제외하기 */
+		UPDATE 
+			TB_LIKE 
+		SET 
+			LIKE_STATUS = LIKE_NO 
+		WHERE 
+			1 = 1 
+			AND REG_USER_NO = #{reg_user_no} 
+			AND LIKE_USER_NO = #{user_no} 
+			AND LIKE_STATUS = 0 
+    </update>
+
+	<select id="XY_01001.SELECT_1">
+		/* 언어 정보 가져오기 */
+		SELECT 
+			  LOCALE 
+			, LANG_CODE 
+			, COUNTRY_CODE 
+			, LANG_NAME 
+			, LANG_URL 
+			, VERSION_NO 
+		FROM 
+			TB_MULTILINGUAL 
+		WHERE 
+			1 = 1 
+			AND LANG_CODE = #{lang_code} 
+			AND USE_YN = TRUE 
+		UNION ALL 
+		SELECT 
+			  LOCALE 
+			, LANG_CODE 
+			, COUNTRY_CODE 
+			, LANG_NAME 
+			, LANG_URL 
+			, VERSION_NO 
+		FROM 
+			TB_MULTILINGUAL 
+		WHERE 
+			1 = 1 
+			AND LANG_CODE = 'en' 
+		LIMIT 1 
+    </select>
+
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- 이 선 기준으로 위는 김두현 이사, 아래는 박대리 작업할 곳-->
+
+
+	<select id="SELECT.LANG.001">
+		/* 코그니토 트리거, 이메일 언어 호출, 박경복 */
+		SELECT * FROM TB_LANG
+		WHERE 1 = 1 
+		AND CODE_ID IN (
+		'PUSH00001','PUSH00002','PUSH00004','PUSH00005','PUSH00006'
+		)
+		AND lang_code = #{lang_code}
+	</select>
+
+
+
+
+
+	<select id="XY_00013.SELECT1">
+	/* 추천인 정보(매칭 결과) 회원 정보*/
+	select
+		user_id,
+		ethnicity ,
+		height ,
+		bodytype ,
+		tribe ,
+		acc_value,
+		COALESCE(job, '') AS job,
+		school,
+		be_point ,
+		re_point ,
+		li_point,
+		profile_result 
+	from
+		tb_user
+	where
+		user_no = #{user_no}
+	and user_id = #{user_id}
+    </select>
+
+	<select id="XY_00013.SELECT2">
+	/* 추천인 정보(매칭 결과) 이미지 리스트*/
+	select
+		img_url 
+	from
+		tb_img
+	where
+		user_no = #{user_no}
+		and use_yn = true
+    </select>
+
+	<select id="XY_00013.SELECT3">
+	/* 추천인 정보(매칭 결과) 답변 리스트 */
+	select
+		set_no ,
+		qa_result
+	from
+		tb_profile_set
+	where
+		set_no in (
+			select
+				jsonb_array_elements_text(profile_result)::int
+			from
+				tb_user
+			where
+				user_no = #{user_no}
+			)
+		and USER_STATUS = 0 
+    </select>
+
+	<select id="XY_00014.SELECT1">
+	/* 좋아요 리스트 카운트 */
+	select
+		count(1) as cnt
+	from
+		tb_like
+	where
+		like_user_no = #{like_user_no}
+    </select>
+
+	<select id="XY_00014.SELECT2">
+	/* 좋아요 리스트 */
+	select
+		a.reg_user_no ,
+		(select img_url from tb_img where user_no = a.reg_user_no and use_yn = true limit 1) as like_user_img,
+		COALESCE(b.user_nm, '') AS user_nm ,
+		b.birth_dt 
+	from
+		tb_like a
+	left outer join tb_user b
+		on a.reg_user_no = b.user_no 
+	where
+		like_user_no = #{like_user_no}
+    </select>
+
+	<select id="XY_00015.SELECT">
+	/* 좋아요 클릭 */
+	select
+		a.reg_user_no ,
+		(select img_url from tb_img where user_no = a.reg_user_no and use_yn = true limit 1) as like_user_img,
+		COALESCE(b.user_nm, '') AS user_nm, 
+		b.birth_dt 
+	from
+		tb_like a
+	left outer join tb_user b
+		on a.reg_user_no = b.user_no 
+	where
+		like_user_no = #{like_user_no}
+    </select>
+
+	<select id="XY_00016.SELECT">
+	/* 환경 설정 */
+	select
+		user_no,
+		age_std ,
+		age_end ,
+		ethnicity ,
+		drink ,
+		smoking ,
+		height_std ,
+		height_end ,
+		bodytype ,
+		"position" ,
+		tribe ,
+		acc_value_std ,
+		acc_value_end ,
+		dist_std ,
+		dist_end 
+	from 
+		tb_user_prefer
+	where 
+		user_no = #{user_no}
+    </select>
+
+	<select id="XY_00018.SELECT">
+	/* 프로파일 가져오기 */
+	select
+		user_no,
+		age_std ,
+		age_end ,
+		ethnicity ,
+		drink ,
+		smoking ,
+		height_std ,
+		height_end ,
+		bodytype ,
+		"position" ,
+		tribe ,
+		acc_value_std ,
+		acc_value_end ,
+		dist_std ,
+		dist_end
+	from
+		tb_user_prefer
+	where
+		user_no = #{user_no}
+    </select>
+
+	<update id="XY_00019.UPDATE2">
+	/* 프로파일 정보 수정 (이미지) */
+	update
+		tb_img
+	set
+		img_no = #{img_no},
+		img_url = #{img_url},
+		reg_dt = #{reg_dt},
+		user_no = #{user_no},
+		use_yn = #{use_yn}
+	where
+		user_no = #{user_no}
+    </update>
+
+	<update id="XY_00019.UPDATE3">
+	/* 프로파일 정보 수정 (이미지 사용여부) */
+	update
+		tb_img
+	set
+		use_yn = #{use_yn}
+	where 
+		user_no = #{user_no}
+		and img_no = #{img_no}
+    </update>
+
+	<select id="XY_00020.SELECT">
+	/* 프로파일 Setting */
+	select
+		user_no,
+		new_match,
+		new_msg,
+		"like",
+		"event",
+		prime_yn,
+		app_icon,
+		signal_msg,
+		secret_mode,
+		deactive,
+		facebook,
+		instagram
+	from
+		tb_user_set
+	where 
+		user_no = #{user_no}
+    </select>
+
+	<update id="XY_00022.UPDATE">
+	/* 프로파일 Setting 업데이트 */
+	update
+		tb_user_set
+	set
+		new_match = #{user_no},
+		new_msg = #{user_no},
+		"like" = #{user_no},
+		"event" = #{user_no},
+		prime_yn = #{user_no},
+		app_icon = 'defalut'::character varying,
+		signal_msg = #{user_no},
+		secret_mode = #{user_no},
+		deactive = #{user_no},
+		facebook = #{user_no},
+		instagram = #{user_no},
+		up_dt = #{user_no}
+	where 
+		user_no = #{user_no}
+    </update>
+
+	<update id="XY_00023.UPDATE">
+	/* 활성화 */
+	update
+		tb_user_set
+	set
+		deactive = ${deactive}
+	where 
+		user_no = #{user_no}
+    </update>
+
+	<update id="XY_00024.UPDATE">
+	/* 계정삭제 */
+	update
+		tb_user
+	set
+		use_yn = false,
+		del_dt = trunc(extract(epoch from now()))
+	where 
+		user_no = #{user_no}
+    </update>
+
+	<select id="XY_00025.SELECT">
+	/* 구독 아이템 금액 정보 */
+	select
+		sub_no ,
+		sub_name ,
+		unit ,
+		value ,
+		price 
+	from
+		tb_subscribe
+	order by 
+		sub_no
+    </select>
+
+	<select id="XY_00100_CHECK.SELECT">
+	/* 유저 세팅 체크  */
+	SELECT
+	    USER_NO
+	    , NEW_MATCH
+	    , NEW_MSG
+	    , "like" 
+	    , "event"
+	    , PRIME_YN
+	    , SIGNAL_MSG
+	    , SECRET_MODE
+	    , DEACTIVE
+	    , FACEBOOK
+	    , INSTAGRAM
+	    , UP_DT
+	    , REG_DT
+	FROM
+	    TB_USER_SET
+	WHERE
+	    1 = 1
+    AND USER_NO = 
+    (
+        SELECT
+            USER_NO
+        FROM
+            TB_USER
+        WHERE
+            1 = 1
+            AND USER_NO = #{user_no}
+            AND USER_ID = #{user_id}
+    )
+	LIMIT 1
+    </select>
+    
+    
+	<select id="LIST.TB_USER.003">
+		/* listTbUsers 리졸버, user 정보 조회, 박경복 */
+		SELECT
+		UUID
+		, USER_NO
+		, EMAIL
+		, TAG1
+		, TAG2
+		, TAG3
+		, COUNTRY
+		, GENDER
+		, UNIQUE_ID
+		, STATUS
+		, PROFILE_URL
+		, LAST_DATE
+		, BITH_YEAR
+		,
+		<choose>
+			<when test="tag_value1 != null">
+				(((
+				CASE
+				WHEN TAG1 = #{tag_value1} THEN 1
+				ELSE 0 END ) + (
+				CASE
+				WHEN TAG2 = #{tag_value2} THEN 1
+				ELSE 0 END ) + (
+				CASE
+				WHEN TAG3 = #{tag_value3} THEN 1
+				ELSE 0 END )) * 100 / 3
+				) AS result
+			</when>
+			<otherwise>
+				0 as result
+			</otherwise>
+		</choose>
+		FROM PUBLIC.TB_USER
+		WHERE 1 = 1
+		AND USER_NO != #{my_user_no}
+		AND USER_NO NOT IN 
+			(
+				SELECT 
+					JOIN_USER_NO 
+				FROM PUBLIC.TB_CHAT_ROOM 
+            	WHERE MAKE_USER_NO = #{my_user_no}
+            	AND ROOM_STAT != 'N'
+            	UNION  ALL
+        		SELECT 
+            		MAKE_USER_NO 
+        		FROM PUBLIC.TB_CHAT_ROOM 
+            	WHERE JOIN_USER_NO = #{my_user_no}
+        		AND ROOM_STAT != 'N'
+        	) 
+		AND USER_LANG = #{user_lang}
+		<if test="tag_value1 != null">
+			AND (
+			TAG1 IN
+			(
+			#{tag_value1},  #{tag_value2}, #{tag_value3}
+			)
+			OR TAG2 IN
+			(
+			#{tag_value1},  #{tag_value2}, #{tag_value3}
+			)
+			OR TAG3 IN
+			(
+			#{tag_value1},  #{tag_value2}, #{tag_value3}
+			)
+			)
+		</if>
+		ORDER BY RESULT DESC, LAST_DATE DESC
+		LIMIT #{limit} OFFSET #{offset};
+	</select>
+    
+
+	<select id="XY_00100.SELECT">
+	/* 유저 리스트 임시 */
+	 SELECT
+	    A.USER_NO AS ID
+	    , A.USER_FANM || ' ' || COALESCE(A.USER_NM, '') AS NAME
+	    , (
+	        FLOOR(DATE_PART('EPOCH' :: TEXT, NOW())) :: BIGINT - A.BIRTH_DT
+	    ) / 60 / 60 / 24 / 365 :: BIGINT AS AGE
+	    , FALSE AS SEND_SIGNAL
+	    , (
+	        SELECT
+	            IMG_URL
+	        FROM
+	            TB_IMG
+	        WHERE
+	            1 = 1
+	            AND USER_NO = A.USER_NO
+	        LIMIT 1
+	    ) AS THUMBNAIL
+	FROM
+	    TB_USER A
+	WHERE 1 = 1
+    AND USER_NO != #{user_no}
+    AND USER_ID != #{user_id}
+	ORDER BY UP_DT DESC
+	LIMIT #{limit} OFFSET #{offset};
+    </select>
+	
+	<select id="XY_00200.SELECT">
+	/* 유저 chat room 리스트 임시 */
+	 SELECT
+	    A.USER_NO AS "key"
+	    , A.USER_NO AS ID
+	    , A.USER_FANM || ' ' || COALESCE(A.USER_NM, '') AS "NAME"
+	    , 'ttt' AS latestPreview
+	    , 0 AS newMessageCount
+	    , (
+	        FLOOR(DATE_PART('EPOCH' :: TEXT, NOW())) :: BIGINT - A.BIRTH_DT
+	    ) / 60 / 60 / 24 / 365 :: BIGINT AS AGE
+	    , FALSE AS SEND_SIGNAL
+	    , (
+	        SELECT
+	            IMG_URL
+	        FROM
+	            TB_IMG
+	        WHERE
+	            1 = 1
+	            AND USER_NO = A.USER_NO
+	        LIMIT 1
+	    ) AS profileImage
+	FROM
+	    TB_USER A
+	WHERE 1 = 1
+    AND USER_NO != #{user_no}
+    AND USER_ID != #{user_id}
+	LIMIT 100
+    </select>
+
+	<select id="XY_00200.SELECT1">
+	/* 유저 chat room 리스트 */
+	SELECT
+	    ROOM_NO
+	    , MAKE_USER_NO
+	    , JOIN_USER_NO
+	    , (case when MAKE_USER_NO = #{user_no}  then JOIN_USER_NO else MAKE_USER_NO end) as other_user_no
+	    , ROOM_STAT
+	    , PAY_TYPE
+	    , MAKE_UUID
+	    , JOIN_UUID
+	    , REG_DT
+	    , DEL_DT
+	    , up_dt 
+	    , (case when MAKE_USER_NO = #{user_no}  then make_msg_cnt else join_msg_cnt end)  AS newMessageCount
+	    <!--, (case when MAKE_USER_NO = #{user_no}  then join_msg_cnt else make_msg_cnt end)  AS other_no_msg_cnt-->
+	    , last_msg as hasNewMessage
+    	<!--, (case when MAKE_USER_NO = #{user_no}  then make_signal_msg else join_signal_msg end)  AS my_signal_msg-->
+    	, (case when MAKE_USER_NO = #{user_no}  then join_signal_msg else make_signal_msg end)  AS other_signal_msg
+	FROM
+	    PUBLIC.TB_CHAT_ROOM A
+	WHERE 1 = 1
+	AND 
+	 (
+	 MAKE_USER_NO = #{user_no}
+	 OR JOIN_USER_NO = #{user_no}
+	 )
+	AND ROOM_STAT = TRUE
+	ORDER BY up_dt DESC
+	LIMIT #{limit} OFFSET #{offset};
+	;
+    </select>
+
+	<select id="XY_00200.SELECT2">
+	/*  user들  정보 조회 , 박경복 */
+	SELECT
+	    A.USER_NO
+	    , A.USER_FANM || ' ' || COALESCE(A.USER_NM, '') AS NAME
+	    , (
+	        FLOOR(DATE_PART('EPOCH' :: TEXT, NOW())) :: BIGINT - A.BIRTH_DT
+	    ) / 60 / 60 / 24 / 365 :: BIGINT AS AGE
+	    , FALSE AS SEND_SIGNAL
+	    , (
+	        SELECT
+	            IMG_URL
+	        FROM
+	            TB_IMG
+	        WHERE
+	            1 = 1
+	            AND USER_NO = A.USER_NO
+	        LIMIT 1
+	    ) AS THUMBNAIL
+	FROM
+	    TB_USER A
+	WHERE 1 = 1
+	AND USER_NO IN
+	(
+	<foreach collection="user_no_array" item="user_no" separator=",">
+		#{user_no}
+	</foreach>
+	)
+	</select>
+
+
+
+	<select id="XY_00300.SELECT-test">
+	/*  CHAT HISTROY LIST , 박경복 */
+	SELECT
+	    A.ROOM_NO
+	    , A.CHAT_SEQ_NO
+	    , A.CHAT_USER_NO
+	    ,(case when A.CHAT_USER_NO = #{user_no}  THEN  true ELSE false  end) as is_me
+	    , A.CHAT_MSG
+	    , A.REG_DT
+	    ,(
+	        SELECT
+	            B.USER_FANM || ' ' || B.USER_NM 
+	        FROM
+	            TB_USER B
+	        WHERE
+	            1 = 1
+	            AND B.USER_NO = A.CHAT_USER_NO
+	        LIMIT 1
+	    ) AS "NAME"
+	    , (
+	        SELECT
+	            C.IMG_URL
+	        FROM
+	            TB_IMG C
+	        WHERE
+	            1 = 1
+	            AND C.USER_NO = A.CHAT_USER_NO
+	        LIMIT 1
+	    ) AS profileImage
+	FROM PUBLIC.TB_CHAT A
+	--LEFT OUTER JOIN  TB_USER B ON  B.user_no = A.CHAT_USER_NO
+	--LEFT OUTER JOIN  TB_IMG C ON C.USER_NO = A.CHAT_USER_NO
+	   WHERE A.ROOM_NO = #{room_no}
+	ORDER BY A.reg_dt  DESC
+	;
+	</select>
+
+	<select id="XY_00300.SELECT">
+	/*  CHAT HISTROY LIST , 박경복 */
+	SELECT
+	    A.ROOM_NO
+	    , A.CHAT_SEQ_NO
+	    , A.CHAT_USER_NO
+	    ,(case when A.CHAT_USER_NO = #{user_no}  THEN  true ELSE false  end) as is_me
+	    , A.CHAT_MSG
+	    , A.REG_DT
+	    , B.USER_FANM || ' ' || B.USER_NM AS "NAME"
+	    , C.IMG_URL AS profileImage
+	FROM PUBLIC.TB_CHAT A
+	LEFT OUTER JOIN  TB_USER B ON  B.user_no = A.CHAT_USER_NO
+	LEFT OUTER JOIN  TB_IMG C ON C.USER_NO = A.CHAT_USER_NO
+	   WHERE A.ROOM_NO = #{room_no}
+	ORDER BY A.reg_dt  DESC
+	LIMIT #{limit} OFFSET #{offset};
+	</select>
+
+	
+	<update id="XY_00400.UPDATE">
+	/*  CHAT HISTROY LIST , 박경복 */
+	UPDATE
+    	PUBLIC.TB_CHAT_ROOM
+	SET
+	    UP_DT = (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT
+	    , MAKE_MSG_CNT = (CASE WHEN MAKE_USER_NO = #{user_no} THEN MAKE_MSG_CNT + 1 ELSE 0 end )
+	    , JOIN_MSG_CNT = (CASE WHEN JOIN_USER_NO = #{user_no} THEN JOIN_MSG_CNT + 1 ELSE 0 end )   
+	    , LAST_MSG = #{chat_msg}
+	    , last_msg_type = #{chat_msg_type}
+	WHERE 1 = 1
+	AND ROOM_NO = #{room_no}
+	AND 
+	(
+	    MAKE_USER_NO = #{user_no}
+	    OR  JOIN_USER_NO = #{user_no}
+	)
+    RETURNING *;
+	</update>
+
+	<insert id="XY_00400.INSERT">
+	INSERT INTO 
+		PUBLIC.TB_CHAT 
+	(
+	    ROOM_NO
+	    , CHAT_USER_NO
+	    , CHAT_MSG
+	    , CHAT_MSG_TYPE
+	    , REG_DT
+	)
+	VALUES
+	(
+	    #{room_no}
+	    , #{user_no}
+	    , #{chat_msg}
+	    , #{chat_msg_type}
+	    , (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT
+	);	
+	</insert>
+
+	<insert id="XY_00500.INSERT">
+	/* CREATE CHAT_ROOM MATCHING , 박경복 */
+	INSERT INTO PUBLIC.TB_CHAT_ROOM 
+	(
+	    REG_DT
+	    , DEL_DT
+	    , UP_DT
+	    , MAKE_USER_NO
+	    , JOIN_USER_NO
+	    , ROOM_STAT
+	    , MAKE_UUID
+	    , JOIN_UUID
+	    , MAKE_SIGNAL_MSG
+	    , JOIN_SIGNAL_MSG
+	    , SIGNAL_STAT
+	)
+	SELECT 
+	    FLOOR(DATE_PART('EPOCH' :: TEXT, NOW())) :: BIGINT
+	    , FLOOR(DATE_PART('EPOCH' :: TEXT, NOW())) :: BIGINT
+	    , FLOOR(DATE_PART('EPOCH' :: TEXT, NOW())) :: BIGINT
+	    , #{make_user_no}
+	    , #{join_user_no}
+	    , TRUE 
+	    , (SELECT user_id FROM tb_user WHERE 1 = 1 AND USER_no = #{make_user_no} )
+	    , (SELECT user_id FROM tb_user WHERE 1 = 1 AND USER_no = #{join_user_no} )
+	    , #{make_signal_msg}
+	    , ''
+	    , 1
+	FROM PUBLIC.TB_CHAT_ROOM 
+	WHERE NOT EXISTS  
+	(
+	    SELECT 1
+	    FROM TB_CHAT_ROOM
+	    WHERE 1 =1
+	    AND ROOM_STAT = TRUE
+	    AND 
+	    (
+	       (MAKE_USER_NO = #{make_user_no} AND JOIN_USER_NO = #{join_user_no} )
+	       OR 
+	       (MAKE_USER_NO = #{join_user_no} AND JOIN_USER_NO = #{make_user_no})
+	     )
+	)
+	LIMIT 1
+	RETURNING *;
+	</insert>
+
+	<update id="XY_00600.UPDATE">
+	/* CREATE CHAT_ROOM no_msg_cnt 0 , 박경복 */
+	UPDATE
+	    PUBLIC.TB_CHAT_ROOM
+	SET
+	    UP_DT = (FLOOR(DATE_PART('EPOCH'::TEXT, NOW())))::BIGINT
+	    , MAKE_MSG_CNT = (CASE WHEN MAKE_USER_NO = #{user_no} THEN 0 ELSE MAKE_MSG_CNT end )
+	    , JOIN_MSG_CNT = (CASE WHEN JOIN_USER_NO = #{user_no} THEN 0 ELSE JOIN_MSG_CNT end )   
+	WHERE 1 = 1
+	AND ROOM_NO = #{room_no}
+	AND 
+	(
+	    MAKE_USER_NO = #{user_no}
+	    OR  JOIN_USER_NO = #{user_no}
+	)
+	RETURNING *;
+	</update>
+
+	<select id="XY_00102.SELECT-1">
+	/* Preferences 가져오기 */
+    SELECT 
+        age_std,
+        age_end,
+        NULL AS ethnicity, 
+        NULL AS drink,
+        NULL AS smoking,
+        height_std,
+        height_end,
+        position_key,
+        bodytype_key,
+        tribe_key,
+        acc_value_std,
+        acc_value_end,
+        dist_std,
+        dist_end
+    FROM 
+        TB_USER_PREFER 
+    WHERE 1 = 1
+    AND USER_NO = #{user_no} 
+    </select>
+
+
+	<select id="XY_00102.SELECT-2">
+	/* 매칭 리스트 */
+	select
+	    b.user_no , 
+	    b.ethnicity,
+	    b.school ,
+	    b.tribe ,
+	    b.height ,
+	    b.bodytype ,
+	    b."position" ,
+	    COALESCE(b.job, '') AS job, 
+	  word_similarity(a.profile_result::varchar, b.profile_result::varchar) as similar_cnt,
+	  earth_distance(ll_to_earth(a.latitude,a.longitude), ll_to_earth(b.latitude,b.longitude)) as distance,
+	    extract(YEAR FROM age(to_timestamp(b.birth_dt)::date)) as age ,
+	    (select array_to_json(array_agg(a.qa_result)) 
+	    from ( select
+	         qa_result
+	      from
+	        tb_profile_set
+	      where
+	        set_no in (select jsonb_array_elements_text(profile_result)::int
+	               from tb_user
+	               where user_no = b.user_no)
+	       and use_yn = true
+	      order by set_no) a) as qa_result 
+	  from
+	    tb_user a
+	  full join tb_user b on
+	    a.user_no != b.user_no
+	  where a.user_no = #{user_no}  
+	  and b.user_no not in (select block_user_no from tb_block where reg_user_no = a.user_no ) 
+	  and b.user_no not in ( select target_user_no from tb_chatting_room where user_no = a.user_no AND STS = 0 )
+	<if test="age_std != null">
+	  <![CDATA[ and extract(YEAR FROM age(to_timestamp(b.birth_dt)::date)) > #{age_std}  ]]>
+    </if>
+ 	<if test="age_end != null">
+	 <![CDATA[ and extract(YEAR FROM age(to_timestamp(b.birth_dt)::date)) < #{age_end}    ]]>
+    </if> 
+ 	<if test="acc_value_std != null">
+	   <![CDATA[and word_similarity(a.profile_result::varchar, b.profile_result::varchar) > #{acc_value_std} / 100 :: float  ]]> 
+    </if> 
+     <if test="acc_value_end != null">
+	   <![CDATA[and word_similarity(a.profile_result::varchar, b.profile_result::varchar) < #{acc_value_end} / 100 :: float   ]]>
+    </if> 
+ 	<if test="dist_std != null">
+	 <![CDATA[ and earth_distance(ll_to_earth(a.latitude,a.longitude), ll_to_earth(b.latitude,b.longitude)) > #{dist_std} * 1000 :: bigint ]]> 
+    </if> 
+ 	<if test="dist_end != null">
+	 <![CDATA[ and earth_distance(ll_to_earth(a.latitude,a.longitude), ll_to_earth(b.latitude,b.longitude)) < #{dist_end} * 1000 :: bigint ]]>
+    </if> 
+ 	<if test="height_std != null">
+	  <![CDATA[ and b.height > #{height_std}   ]]>
+    </if> 
+    <if test="height_end != null">
+	 <![CDATA[  and b.height < #{height_end}  ]]>
+    </if> 
+ 	<if test="bodytype_key != null">
+	  and b.bodytype = #{bodytype_key}    
+    </if> 
+ 	<if test="position_key != null">
+	  and b."position" = #{position_key} 
+    </if> 
+ 	<if test="tribe_key != null">
+	  and b.tribe = #{tribe_key}    
+    </if> 
+	  order by similar_cnt desc   
+	  limit #{limit} offset #{offset};
+	</select>
+
+	<update id="XY_00024-2.UPDATE">
+	/* 계정삭제 */
+	update
+		tb_user
+	set
+		use_yn = false,
+		del_dt = trunc(extract(epoch from now()))
+	where 
+		user_no = #{user_no}
+	RETURNING *;
+    </update>
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    <!--이 선 기준으로 이하 작성자 허정준-->
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+	<insert id="XY_00800.INSERT">
+	/* 차단하기 */
+	INSERT INTO
+		public.tb_block 
+		(
+			reg_user_no,
+			block_user_no,
+			use_yn,
+			reg_dt
+		)
+	SELECT
+			#{reg_user_no},
+			#{block_user_no},
+			'y',
+			floor(date_part('EPOCH' :: text, now())) :: bigint
+	WHERE
+		NOT EXISTS (
+		SELECT
+			reg_user_no,
+			block_user_no
+		FROM
+			public.tb_block
+		WHERE
+			reg_user_no = #{reg_user_no}
+			AND block_user_no = #{block_user_no}
+			);
+	</insert>
+	
+	<insert id="XY_00801.INSERT">
+	/*신고하기*/
+	INSERT INTO public.tb_report 
+	(	
+		reg_user_no,
+		report_user_no,
+		report_title,
+		report_comment,
+		reg_dt
+	)
+	VALUES
+	(
+		#{reg_user_no},
+		#{report_user_no},
+		#{report_title},
+		#{report_comment},
+		floor(date_part('EPOCH' :: text, now())) :: bigint
+	);
+	</insert>
+
+</mapper>

@@ -1,0 +1,351 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="SCHEDULER">
+
+<!--스케줄러(영업사원 정산)-->
+<select id="HAX.SCHEDULER.SELECT.001">
+  SELECT
+    sub.*,tm.special_code ,tm.name,
+    case when sub.total_amount &gt;= 20000000 and sub.total_amount &lt; 30000000 
+    then sub.total_amount*0.001 
+    when sub.total_amount &gt;= 30000000 
+    then sub.total_amount*0.0015 else 0 end as incentive
+    FROM 
+    tb_member as tm left join 
+    (
+    SELECT
+        o.agent_code,
+        sum(o.point_amount+o.coupon_amount) as total_point, 
+     	sum(case when op.discount_price &gt; 0 then op.discount_price-op.event_limit_price else op.total_price-op.event_limit_price  end ) - sum(o.point_amount+o.coupon_amount) as total_amount,
+     	sum(case when op.discount_price &gt; 0 then op.discount_price else op.total_price  end ) - sum(o.point_amount+o.coupon_amount) as total_allamount,
+        json_agg(json_build_object(
+                'order_pk', op.order_pk,
+                'order_no', o.order_no,
+                'product_pk', op.product_pk,
+                'product_name', p.product_name,
+                'total_price', op.total_price,
+                'discount_price', op.discount_price,
+                'event_limit_price', op.event_limit_price,
+                'order_reg_dt', o.reg_dt,
+                'member_name', m.name
+            ) order by op.order_pk desc,op.reg_dt desc
+        ) as order_data,
+        json_agg(hist.order_pk) as orderspks
+    FROM
+        tb_order as o 
+        INNER JOIN tb_member m
+        ON o.member_pk = m.member_pk
+        inner join (
+        select 
+            order_pk
+        from tb_orderhistory 
+        where 
+            reg_dt between #{startDay} and #{endDay} and history_type = 'TRANSING'
+        group by order_pk 
+        ) as hist on o.order_pk = hist.order_pk 
+        inner join tb_orderproduct as op on o.order_pk = op.order_pk 
+        inner join tb_product as p on op.product_pk = p.product_pk 
+    WHERE  
+        o.agent_code is not null and o.agent_code != '' 
+        and o.salesman_dt is null
+        and o.order_status in ('TRANSING','RETURN')
+    group by o.agent_code
+    ) as sub on tm.special_code = sub.agent_code
+    WHERE
+    tm.use_yn = true and tm.approval = true and tm.is_retired = false and tm.is_salesman = true
+</select>
+
+<!--스케줄러(회원등급 정산)-->
+<select id="HAX.SCHEDULER.SELECT.002">
+    SELECT
+        sub.member_pk,
+        sub.member_name,
+        COALESCE(sub.grade_amount,0) as grade_amount,
+        COALESCE(sub.totalproduct_amount,0) as totalproduct_amount,
+        COALESCE(sub.total_amount,0) as total_amount,
+        COALESCE(sub.discount_amount,0) as discount_amount,
+        COALESCE(sub.coupon_amount,0) as coupon_amount,
+        COALESCE(sub.point_amount,0) as point_amount,
+        floor(COALESCE(sub.total_valamount,0)) as total_valamount,
+        COALESCE(sub.total_nonamount,0) as total_nonamount,
+        CASE WHEN sub.grade_amount &gt;= #{platinumGrade} THEN 'Platinum' WHEN sub.grade_amount &lt; #{platinumGrade} AND sub.grade_amount &gt;= #{goldGrade} THEN 'Gold'
+        WHEN sub.grade_amount &lt; #{goldGrade} AND sub.grade_amount &gt;= #{silverGrade} THEN 'Silver' ELSE 'Bronze' END AS new_grade,
+        sub.order_data
+    FROM
+        (
+            SELECT
+                m.member_pk,
+                max(m.name) AS member_name,
+                sum(sub.totalproduct_amount) AS totalproduct_amount,
+                sum(sub.total_amount) AS total_amount,
+			    floor(sum((sub.total_amount-sub.total_nonamount)*0.1)) as total_valamount,
+                sum(sub.total_nonamount) AS total_nonamount,
+                sum(sub.discount_amount) AS discount_amount,
+                sum(sub.coupon_amount) AS coupon_amount,
+                sum(sub.point_amount) AS point_amount,
+                floor(sum(
+                    case when sub.totalproduct_amount-sub.discount_amount-sub.total_nonamount-sub.coupon_amount-sub.point_amount-((sub.total_amount-sub.total_nonamount)*0.1) &lt; 0 then 0 
+                    else sub.totalproduct_amount-sub.discount_amount-sub.total_nonamount-sub.coupon_amount-sub.point_amount-((sub.total_amount-sub.total_nonamount)*0.1) end
+                )) as grade_amount,
+                ( CASE WHEN sum(sub.totalproduct_amount) &gt; 0 THEN
+                json_agg(json_build_object(
+                    'order_pk',sub.order_pk,
+                    'send_dt',sub.send_dt,
+                    'member_pk',sub.member_pk,
+                    'totalproduct_amount',sub.totalproduct_amount,
+                    'total_amount',sub.total_amount,
+				    'total_valamount',floor(((sub.total_amount-sub.total_nonamount)*0.1)),
+                    'total_nonamount',sub.total_nonamount,
+                    'discount_amount',sub.discount_amount,
+                    'coupon_amount',sub.coupon_amount,
+                    'point_amount',sub.point_amount
+                    ) ORDER BY sub.order_pk
+                ) ELSE NULL END ) AS order_data
+            FROM
+                tb_member AS m
+                LEFT OUTER JOIN
+                (
+                    SELECT
+                        o.order_pk,
+                        max(o.member_pk) AS member_pk,
+                        max(hist.send_dt) AS send_dt,
+                        COALESCE(sum(op.total_price),0) AS totalproduct_amount,
+                        COALESCE(sum(CASE WHEN op.discount_price &gt; 0 THEN op.discount_price ELSE op.total_price END),0) AS total_amount,
+                        COALESCE(sum(CASE 
+                                WHEN(op.product_info-&gt;&gt;'is_nonpoint')::boolean = TRUE AND op.discount_price &gt; 0 THEN op.discount_price
+                                WHEN(op.product_info-&gt;&gt;'is_nonpoint')::boolean = TRUE AND op.discount_price = 0 THEN op.total_price ELSE 0 END),0) AS total_nonamount,
+                        COALESCE(sum(CASE WHEN op.discount_price &gt; 0 THEN op.total_price-op.discount_price ELSE 0 END ),0) AS discount_amount,
+                        coalesce(max(case when (op.product_info->>'is_nonpoint')::boolean = true then 0 else o.coupon_amount end ),0) as coupon_amount,
+                        coalesce(max(case when (op.product_info->>'is_nonpoint')::boolean = true then 0 else o.point_amount end ),0) as point_amount
+                    FROM
+                        tb_order AS o
+                        INNER JOIN (
+                            SELECT
+                                order_pk,
+                                max(reg_dt) AS send_dt
+                                FROM
+                                    tb_orderhistory
+                                WHERE
+                                    reg_dt BETWEEN #{startDay} AND #{endDay} AND history_type IN ('INCOME')
+                                GROUP BY
+                                    order_pk
+                        ) AS hist
+                        ON o.order_pk = hist.order_pk
+                        LEFT OUTER JOIN tb_orderproduct AS op
+                        ON o.order_pk = op.order_pk
+                    WHERE 1=1
+                    GROUP BY
+                        o.order_pk
+                    ORDER BY
+                        o.order_pk
+                    ) AS sub
+                ON m.member_pk = sub.member_pk
+            WHERE
+                m.member_type = 'Normal'
+            GROUP BY
+                m.member_pk
+            ) AS sub
+</select>
+
+<!--스케줄러(리워드 마감임박)-->
+<select id="HAX.SCHEDULER.SELECT.003">
+    SELECT
+        a.member_pk,
+        sum(a.remain_point) AS remain_point,
+        max(b.name) AS member_name,
+        max(b.push_token) AS push_token
+    FROM
+        tb_reserve AS a
+        INNER JOIN tb_member AS b
+        ON a.member_pk = b.member_pk
+    WHERE 1=1
+        AND a.use_enddate BETWEEN floor(date_part('epoch'::text, #{startTerm} + INTERVAL '${day} day'))::bigint AND floor(date_part('epoch'::text, #{endTerm} + INTERVAL '${day} day'))::bigint
+        AND b.is_push = TRUE
+        AND b.push_token IS NOT NULL
+        AND a.remain_point > 0
+    GROUP BY
+        a.member_pk
+</select>
+
+<!--스케줄러(결제기간 초과)-->
+<update id="HAX.SCHEDULER.UPDATE.001">
+    WITH TMP AS (UPDATE
+        TB_ORDER
+    SET
+        ORDER_STATUS = 'CANCEL_B',
+        CANCEL_DT = floor(date_part('epoch'::text, now()))::bigint
+    WHERE
+        ORDER_STATUS = 'WAIT'
+        AND INCOME_LIMIT_DT &lt; #{today}
+        AND SETTLE_TYPE = 'vbank'
+    RETURNING
+        ORDER_PK)
+    INSERT INTO
+        TB_ORDERHISTORY
+            (
+                ORDER_PK,
+                COMMENT,
+                HISTORY_TYPE
+            )
+    SELECT
+        ORDER_PK,
+        #{comment},
+        #{history_type}
+    FROM
+        TMP
+</update>
+
+<!--스케줄러(영업사원 정산)-->
+<insert id="HAX.SCHEDULER.INSERT.001">
+    <foreach collection="selectResult" item="items" separator=";">
+    WITH TMP AS (INSERT INTO
+	TB_INCENTIVE
+	(
+        AGENT_CODE,
+        SALES_MONTH,
+        TOTAL_AMOUNT,
+        TOTAL_INCENTIVE,
+        TOTAL_ALLAMOUNT,
+        total_point,
+        ORDER_DATA
+		)
+    VALUES
+	(
+		#{items.special_code},
+		#{sales_month},
+		COALESCE(#{items.total_amount},0),
+		COALESCE(#{items.incentive},0),
+        COALESCE(#{items.total_allamount},0),
+        coalesce(#{items.total_point},0),
+        #{items.order_data}
+		) ON
+    CONFLICT (AGENT_CODE, SALES_MONTH) DO
+    UPDATE
+    SET
+        AGENT_CODE = TB_INCENTIVE.AGENT_CODE,
+        SALES_MONTH = TB_INCENTIVE.SALES_MONTH,
+        TOTAL_AMOUNT = EXCLUDED.TOTAL_AMOUNT,
+        TOTAL_INCENTIVE = EXCLUDED.TOTAL_INCENTIVE,
+        TOTAL_ALLAMOUNT = EXCLUDED.TOTAL_ALLAMOUNT,
+        total_point = EXCLUDED.total_point,
+        ORDER_DATA = EXCLUDED.ORDER_DATA)
+    UPDATE
+        TB_ORDER
+    SET
+        SALESMAN_DT = #{now}
+    WHERE 
+        ORDER_PK IN (${items.orderspks})
+    </foreach>
+</insert>
+
+<!--스케줄러(회원등급 정산)-->
+<insert id="HAX.SCHEDULER.INSERT.002">
+    <foreach collection="selectResult" item="items" separator=";">
+    WITH TMP AS (INSERT INTO
+        TB_GRADE_LOG
+		(
+			MEMBER_PK,
+			GRADE_CODE,
+			GRADE_START,
+			GRADE_END,
+			ORDER_INFO,
+            grade_amount,
+            totalproduct_amount,
+            total_amount,
+            discount_amount,
+            coupon_amount,
+            point_amount,
+            total_valamount,
+            grade_term_start,
+            grade_term_end
+		)
+    VALUES
+        (
+            #{items.member_pk},
+            #{items.new_grade},
+            #{gradeStart},
+            #{gradeEnd},
+            #{items.order_data},
+            #{items.grade_amount},
+            #{items.totalproduct_amount},
+            #{items.total_amount},
+            #{items.discount_amount},
+            #{items.coupon_amount},
+            #{items.point_amount},
+            #{items.total_valamount},
+            #{gradeTermStart},
+            #{gradeTermEnd}
+        ))
+    UPDATE
+        TB_MEMBER
+    SET
+        GRADE_CODE = #{items.new_grade},
+        GRADE_START = #{gradeStart},
+        GRADE_END = #{gradeEnd}
+    WHERE
+        MEMBER_PK = #{items.member_pk}
+    </foreach>
+</insert>
+
+<!--스켈줄러(회원등급 정산-쿠폰지급)-->
+<insert id="HAX.SCHEDULER.INSERT.003">
+    <foreach collection="selectResult" item="items" separator=";">
+    WITH TMP AS (
+    SELECT
+        member_pk 
+    FROM
+        tb_member 
+    WHERE
+    member_pk = #{items.member_pk} 
+    AND member_pk NOT IN ( 
+        SELECT 
+            member_pk
+        from 
+            tb_coupon
+        where 
+            is_first = TRUE
+            AND coupon_type = (CASE WHEN #{items.new_grade} = 'Silver' THEN '50000' WHEN #{items.new_grade} = 'Gold' THEN '100000' WHEN #{items.new_grade} = 'Platinum' THEN '200000' END)
+            AND member_pk = #{items.member_pk}
+        GROUP BY 
+            member_pk))
+    INSERT INTO
+        TB_COUPON
+            (
+                COUPON_TYPE,
+                PRICE,
+                REG_DT,
+                END_DT,
+                MEMBER_PK,
+                IS_FIRST,
+                ISSUE_REASON
+                )
+    SELECT
+        CASE WHEN #{items.new_grade} = 'Silver' THEN 50000 WHEN #{items.new_grade} = 'Gold' THEN 100000 WHEN #{items.new_grade} = 'Platinum' THEN 200000 END AS COUPON_TYPE,
+        CASE WHEN #{items.new_grade} = 'Silver' THEN 50000 WHEN #{items.new_grade} = 'Gold' THEN 100000 WHEN #{items.new_grade} = 'Platinum' THEN 200000 END AS PRICE,
+        floor(date_part('epoch'::text, now()))::bigint,
+        floor(date_part('epoch'::text, now() + INTERVAL '3 month'))::bigint,
+        member_pk,
+        TRUE,
+        '[${items.new_grade}]최초 1회 감사쿠폰 발급'
+    FROM
+        TMP
+    WHERE 1=1
+        AND #{items.new_grade} != 'Bronze'
+    </foreach>
+</insert>
+
+<!--스케줄러(TEST)-->
+<insert id="HAX.SCHEDULER.INSERT.999">
+    WITH co AS (SELECT
+    	COALESCE(count(1),0) AS count
+    FROM
+    	tb_order)
+    INSERT INTO
+    	tb_ordercount
+    		(count)
+    SELECT
+    	count
+    FROM
+    	co
+</insert>
+</mapper>
